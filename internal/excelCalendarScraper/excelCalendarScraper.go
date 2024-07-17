@@ -131,7 +131,7 @@ func parsePhone(cellValue string) string {
 }
 
 func parseName(cellValue string) string {
-	before, after, boo := strings.Cut(cellValue, " ")
+	before, _, boo := strings.Cut(cellValue, " ")
 	if boo {
 		return before
 	}
