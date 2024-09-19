@@ -2,41 +2,45 @@ package excelCalendarScraper
 
 import (
 	"awesomeProject/internal/myLogger"
-	"awesomeProject/internal/repo"
 	"errors"
 	"fmt"
-	"github.com/google/uuid"
 	"github.com/xuri/excelize/v2"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
-func ExcelCalendarScraper(model repo.DBSql) {
+func ExcelCalendarScraper() {
 	file, err := excelize.OpenFile("CalendarCheckInCheckOut.xlsx")
 	if err != nil {
 		myLogger.Logger.Println(err)
 		return
 	}
-	defer file.Close()
+	defer func(file *excelize.File) {
+		err := file.Close()
+		if err != nil {
+			myLogger.Logger.Println(err)
+		}
+	}(file)
 
-	//getByRows(file)
 	datesMap, err := writeInMapDatesAndColumesNames(file, 7)
 	if err != nil {
 		myLogger.Logger.Println(err)
 		return
 	}
 
-	reservations, guests, err := getAllBookingForApartment("A602", file, "2023-11-01", 9, datesMap)
+	excelSettings := excelParserSettings{file, "2023-11-01", 9, datesMap}
+
+	bookings, err := excelSettings.getAllBookingForApartment("A602")
 	if err != nil {
 		myLogger.Logger.Println(err)
 		return
 	}
-	myLogger.Logger.Println(reservations)
-	myLogger.Logger.Println(guests)
 
-	//getCellValueByName(file, "HX9")
-	//getMergeCells(file)
+	for _, booking := range bookings {
+		myLogger.Logger.Println(booking)
+	}
 }
 
 func getByRows(file *excelize.File) {
@@ -61,85 +65,112 @@ func datePlusOneDay(date string) (string, error) {
 	return timeDate.Add(time.Hour * 24).Format(time.DateOnly), nil
 }
 
-func getAllBookingForApartment(roomNumber string, file *excelize.File, startDate string, startRow int, dateMap map[string]string) ([]repo.Reservaton, []repo.Guest, error) {
-	date := startDate
+type excelParserSettings struct {
+	file      *excelize.File
+	startDate string
+	startRow  int
+	dateMap   map[string]string
+}
+
+func (e excelParserSettings) getAllBookingForApartment(roomNumber string) ([]BookingInfo, error) {
+	date := e.startDate
 	var value string
-	reservation := repo.Reservaton{RoomNumber: roomNumber}
-	reservations := make([]repo.Reservaton, 0, 15)
-	var guest repo.Guest
-	guests := make([]repo.Guest, 0, 15)
+	bookingInfoSlice := make([]BookingInfo, 0, 15)
 
 	for {
-		colum, ok := dateMap[date]
+		colum, ok := e.dateMap[date]
 		if !ok {
 			err := errors.New("date not found in Map of date")
 			myLogger.Logger.Println(fmt.Errorf("%v: %w", date, err))
 			break
 		}
-		v, err := getCellValueByName(file, colum+strconv.Itoa(startRow))
+		v, err := getCellValueByName(e.file, colum+strconv.Itoa(e.startRow))
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 
 		switch {
 		case value == "":
-			//todo исправить что бы повторно не конвертить в time.Time
-			timeDate, err := time.Parse(time.DateOnly, date)
-			if err != nil {
-				return nil, nil, err
-			}
 			value = v
-			reservation.CheckIn = timeDate
-			reservation.CheckOut = timeDate
+
 		case value != "" && v == value:
-			//todo исправить что бы повторно не конвертить в time.Time
-			timeDate, err := time.Parse(time.DateOnly, date)
-			if err != nil {
-				return nil, nil, err
-			}
 			value = v
-			reservation.CheckOut = timeDate
 		case value != v:
-			timeDate, err := time.Parse(time.DateOnly, date)
+			bookingInfo, err := parseValue(value, roomNumber)
 			if err != nil {
-				return nil, nil, err
+				myLogger.Logger.Println(err)
 			}
-			guest = repo.Guest{GuestID: uuid.New(), Name: parseName(value), Phone: parsePhone(value), Description: parseDescription(value)}
-			reservation.GuestID = guest.GuestID
-
-			guests = append(guests, guest)
-			guest = repo.Guest{}
-
-			reservations = append(reservations, reservation)
-			reservation = repo.Reservaton{RoomNumber: roomNumber}
-			reservation.CheckIn = timeDate
-			reservation.CheckOut = timeDate
+			bookingInfoSlice = append(bookingInfoSlice, bookingInfo)
 			value = v
 		}
 
 		// add one day to date
 		date, err = datePlusOneDay(date)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 	}
 
-	return reservations, guests, nil
-}
-func parsePhone(cellValue string) string {
-	return ""
+	return bookingInfoSlice, nil
 }
 
-func parseName(cellValue string) string {
-	before, _, boo := strings.Cut(cellValue, " ")
-	if boo {
-		return before
+func parseValue(cellValue string, roomNumber string) (BookingInfo, error) {
+	s := strings.FieldsFunc(cellValue, func(c rune) bool {
+		return c == ':' || c == ','
+	})
+
+	bookingInfo := BookingInfo{RoomNumber: roomNumber}
+	bookingInfo.parseOutBookingInfo(s)
+	return bookingInfo, nil
+}
+func (b *BookingInfo) parseOutBookingInfo(s []string) {
+	for k, v := range s {
+		v = strings.TrimFunc(v, func(c rune) bool {
+			return unicode.IsSpace(c)
+		})
+
+		//проверим на наличие следующего индекса в слайсе
+		if len(s) < k+1+1 {
+			return
+		}
+
+		switch v {
+		case "Name":
+			b.GuestName = s[k+1]
+		case "Check in":
+			b.CheckIn = s[k+1]
+		case "Check out":
+			b.CheckOut = s[k+1]
+		case "Price":
+			b.Price = s[k+1]
+		case "Cleaning price":
+			b.CleaningPrice = s[k+1]
+		case "Electricity and water payment":
+			b.ElectricityAndWaterPayment = s[k+1]
+		case "Adult":
+			b.Adult = s[k+1]
+		case "children":
+			b.Children = s[k+1]
+		case "Phone":
+			b.Phone = s[k+1]
+		case "Description":
+			b.Description = s[k+1]
+		}
 	}
-	return ""
 }
 
-func parseDescription(cellValue string) string {
-	return cellValue
+type BookingInfo struct {
+	RoomNumber                 string
+	CheckIn                    string
+	CheckOut                   string
+	GuestName                  string
+	Phone                      string
+	Price                      string
+	CleaningPrice              string
+	ElectricityAndWaterPayment string
+	Adult                      string
+	Children                   string
+	Description                string
 }
 
 func writeInMapDatesAndColumesNames(file *excelize.File, i int) (map[string]string, error) {

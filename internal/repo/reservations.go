@@ -7,11 +7,17 @@ import (
 )
 
 type Reservaton struct {
-	Oid        int
-	RoomNumber string    `json:"room_number"`
-	GuestID    uuid.UUID `json:"guest_id"`
-	CheckIn    time.Time `db:"check_in"`
-	CheckOut   time.Time `db:"check_out"`
+	Oid                        int
+	RoomNumber                 string    `db:"room_number"`
+	GuestID                    uuid.UUID `db:"guest_id"`
+	CheckIn                    time.Time `db:"check_in"`
+	CheckOut                   time.Time `db:"check_out"`
+	Price                      int       `db:"price"`
+	CleaningPrice              int       `db:"cleaning_price"`
+	ElectricityAndWaterPayment string    `db:"electricity_and_water_payment"`
+	Adult                      int       `db:"adult"`
+	Children                   int       `db:"children"`
+	Description                string    `db:"description"`
 }
 
 type Reservator interface {
@@ -29,7 +35,8 @@ func (db *DBPostgreSQl) Delete(ctx context.Context) {
 func (db *DBPostgreSQl) Create(ctx context.Context, r Reservaton) (*Reservaton, error) {
 	reservation := new(Reservaton)
 	queryContext := db.PostgreSQL.QueryRowContext(ctx,
-		"INSERT INTO Reservations (room_number, guest_id, check_in, check_out) VALUES ($1, $2, $3,$4) Returning *",
+		"INSERT INTO Reservations (room_number, guest_id, check_in, check_out,price,cleaning_price,cleaning_price,adult,children,description) "+
+			"VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) Returning *",
 		r.RoomNumber, r.GuestID, r.CheckIn, r.CheckOut)
 
 	err := queryContext.Scan(&reservation.Oid, &reservation.RoomNumber, &reservation.GuestID, &reservation.CheckIn, &reservation.CheckOut)

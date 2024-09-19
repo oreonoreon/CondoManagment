@@ -12,17 +12,17 @@ import (
 
 func main() {
 	//create Db model
-	model, err := repo.DataBasePostgreSQl()
-	if err != nil {
-		panic(err)
-	}
-	defer model.PostgreSQL.Close()
+	//model, err := repo.DataBasePostgreSQl()
+	//if err != nil {
+	//	panic(err)
+	//}
+	//defer model.PostgreSQL.Close()
 
 	//err = calendarScraper.DownloadCalendar(model, "A606")
 	//if err != nil {
 	//	myLogger.Logger.Println(err)
 	//}
-	excelCalendarScraper.ExcelCalendarScraper(model)
+	excelCalendarScraper.ExcelCalendarScraper()
 	//server(model)
 }
 
@@ -35,6 +35,7 @@ func server(model repo.DBSql) {
 		panic(err)
 	}
 }
+
 func SynchroniseCalendar(dbModel repo.DBSql) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/sync" {
