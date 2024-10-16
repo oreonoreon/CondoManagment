@@ -6,17 +6,21 @@ import (
 	_ "github.com/lib/pq"
 )
 
-type DBPostgreSQl struct {
+type Repository struct {
 	PostgreSQL *standard.DB
 }
 
-// DataBasePostgreSQl не забываем закрыть соединение с бд, defer conn.Close()
-func DataBasePostgreSQl() (*DBPostgreSQl, error) {
+func NewRepository(db *standard.DB) *Repository {
+	return &Repository{PostgreSQL: db}
+}
+
+// ConnectionPostgreSQl не забываем закрыть соединение с бд, defer conn.Close()
+func ConnectionPostgreSQl() (*standard.DB, error) {
 	c, err := sql.Open("postgres", "postgres://oreonoreon:12345@localhost:5432/postgres?sslmode=disable")
 	if err != nil {
 		return nil, err
 	}
-	conn := standard.NewDB("github.com/lib/pq", c)
+	db := standard.NewDB("github.com/lib/pq", c)
 
-	return &DBPostgreSQl{PostgreSQL: conn}, nil
+	return db, nil
 }

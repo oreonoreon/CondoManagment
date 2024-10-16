@@ -11,11 +11,14 @@ import (
 	"unicode"
 )
 
-func ExcelCalendarScraper() {
-	file, err := excelize.OpenFile("CalendarCheckInCheckOut.xlsx")
+type ExcelFilePath struct {
+	Path string `yaml:"path"`
+}
+
+func (e ExcelFilePath) ExcelCalendarScraper() ([]BookingInfo, error) {
+	file, err := excelize.OpenFile(e.Path)
 	if err != nil {
-		myLogger.Logger.Println(err)
-		return
+		return nil, err
 	}
 	defer func(file *excelize.File) {
 		err := file.Close()
@@ -26,21 +29,17 @@ func ExcelCalendarScraper() {
 
 	datesMap, err := writeInMapDatesAndColumesNames(file, 7)
 	if err != nil {
-		myLogger.Logger.Println(err)
-		return
+		return nil, err
 	}
 
-	excelSettings := excelParserSettings{file, "2023-11-01", 9, datesMap}
+	excelSettings := excelParserSettings{file, "2023-11-01", 4, datesMap}
 
 	bookings, err := excelSettings.getAllBookingForApartment("A602")
 	if err != nil {
-		myLogger.Logger.Println(err)
-		return
+		return nil, err
 	}
 
-	for _, booking := range bookings {
-		myLogger.Logger.Println(booking)
-	}
+	return bookings, err
 }
 
 func getByRows(file *excelize.File) {
@@ -50,7 +49,7 @@ func getByRows(file *excelize.File) {
 	}
 
 	for i, row := range rows {
-		if i == 9 {
+		if i == 4 {
 			for _, col := range row {
 				myLogger.Logger.Print(col, "\t")
 			}
@@ -118,6 +117,12 @@ func parseValue(cellValue string, roomNumber string) (BookingInfo, error) {
 	s := strings.FieldsFunc(cellValue, func(c rune) bool {
 		return c == ':' || c == ','
 	})
+	//удалим пробелы
+	for i, v := range s {
+		s[i] = strings.TrimFunc(v, func(c rune) bool {
+			return unicode.IsSpace(c)
+		})
+	}
 
 	bookingInfo := BookingInfo{RoomNumber: roomNumber}
 	bookingInfo.parseOutBookingInfo(s)
@@ -125,9 +130,6 @@ func parseValue(cellValue string, roomNumber string) (BookingInfo, error) {
 }
 func (b *BookingInfo) parseOutBookingInfo(s []string) {
 	for k, v := range s {
-		v = strings.TrimFunc(v, func(c rune) bool {
-			return unicode.IsSpace(c)
-		})
 
 		//проверим на наличие следующего индекса в слайсе
 		if len(s) < k+1+1 {

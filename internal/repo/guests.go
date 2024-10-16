@@ -1,7 +1,9 @@
 package repo
 
 import (
+	"awesomeProject/internal/myLogger"
 	"context"
+	"database/sql"
 	"github.com/google/uuid"
 )
 
@@ -12,28 +14,75 @@ type Guest struct {
 	Description string
 }
 
-func (db *DBPostgreSQl) CreateGuest(ctx context.Context, g Guest) (*Guest, error) {
+type Guester interface {
+	CreateGuest(ctx context.Context, g Guest) (*Guest, error)
+	ReadGuest(ctx context.Context, guestID uuid.UUID) (*Guest, error)
+	FindGuestByPhoneNumber(ctx context.Context, phone string) (*Guest, error)
+}
+
+func (db *Repository) CreateGuest(ctx context.Context, g Guest) (*Guest, error) {
 	guest := new(Guest)
 	queryContext := db.PostgreSQL.QueryRowContext(ctx,
 		"INSERT INTO Guests (guest_id, name, phone,description) VALUES ($1, $2, $3, $4) RETURNING *",
-		g.GuestID, g.Name, g.Phone, g.Description)
+		g.GuestID, g.Name, Nullable(g.Phone), g.Description)
 
-	err := queryContext.Scan(&guest.GuestID, &guest.Name, &guest.Phone, &guest.Description)
+	var sPhone sql.NullString
+	err := queryContext.Scan(&guest.GuestID, &guest.Name, &sPhone, &guest.Description)
 	if err != nil {
 		return nil, err
 	}
+
+	if sPhone.Valid {
+		guest.Phone = sPhone.String
+	} else {
+		guest.Phone = ""
+	}
+
 	return guest, nil
 }
 
-func (db *DBPostgreSQl) ReadGuest(ctx context.Context, guestID uuid.UUID) (*Guest, error) {
+func (db *Repository) ReadGuest(ctx context.Context, guestID uuid.UUID) (*Guest, error) {
 	guest := new(Guest)
 	queryContext := db.PostgreSQL.QueryRowContext(ctx,
 		"Select * from Guests where guest_id=$1",
 		guestID)
 
-	err := queryContext.Scan(&guest.GuestID, &guest.Name, &guest.Phone, &guest.Description)
+	var sPhone sql.NullString
+	err := queryContext.Scan(&guest.GuestID, &guest.Name, &sPhone, &guest.Description)
 	if err != nil {
 		return nil, err
 	}
+
+	if sPhone.Valid {
+		guest.Phone = sPhone.String
+	} else {
+		guest.Phone = ""
+	}
+
+	return guest, nil
+}
+
+func Nullable(field string) interface{} {
+	if len(field) == 0 {
+		return sql.NullString{}
+	}
+	return field
+}
+
+func (db *Repository) FindGuestByPhoneNumber(ctx context.Context, phone string) (*Guest, error) {
+	guest := new(Guest)
+	queryContext := db.PostgreSQL.QueryRowContext(ctx,
+		"Select * from Guests where phone=$1",
+		phone)
+
+	err := queryContext.Scan(&guest.GuestID, &guest.Name, &guest.Phone, &guest.Description)
+	if err == db.PostgreSQL.ErrNoRows() {
+		myLogger.Logger.Println(err)
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
 	return guest, nil
 }

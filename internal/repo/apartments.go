@@ -8,8 +8,13 @@ type Apartment struct {
 	Description    string
 	AirbnbCalendar string
 }
+type Apartmenter interface {
+	CreateApartment(ctx context.Context, apartment Apartment) error
+	ReadApartment(ctx context.Context, roomNumber string) (*Apartment, error)
+	ReadApartmentAll(ctx context.Context) ([]Apartment, error)
+}
 
-func (db *DBPostgreSQl) CreateApartment(ctx context.Context, apartment Apartment) error {
+func (db *Repository) CreateApartment(ctx context.Context, apartment Apartment) error {
 	_, err := db.PostgreSQL.QueryContext(ctx,
 		"INSERT INTO Apartments (room_number, description,airbnb_calendar) VALUES ($1,$2,$3)",
 		apartment.RoomNumber, apartment.Description, apartment.AirbnbCalendar)
@@ -18,14 +23,14 @@ func (db *DBPostgreSQl) CreateApartment(ctx context.Context, apartment Apartment
 	}
 	return nil
 }
-func (db *DBPostgreSQl) UpdateApartment() {
+func (db *Repository) UpdateApartment() {
 
 }
-func (db *DBPostgreSQl) DeleteApartment() {
+func (db *Repository) DeleteApartment() {
 
 }
 
-func (db *DBPostgreSQl) ReadApartment(ctx context.Context, roomNumber string) (*Apartment, error) {
+func (db *Repository) ReadApartment(ctx context.Context, roomNumber string) (*Apartment, error) {
 	apartment := new(Apartment)
 	queryContext := db.PostgreSQL.QueryRowContext(ctx,
 		"Select * from Apartments where room_number=$1",
@@ -38,7 +43,7 @@ func (db *DBPostgreSQl) ReadApartment(ctx context.Context, roomNumber string) (*
 	return apartment, nil
 }
 
-func (db *DBPostgreSQl) ReadApartmentAll(ctx context.Context) ([]Apartment, error) {
+func (db *Repository) ReadApartmentAll(ctx context.Context) ([]Apartment, error) {
 	apartments := make([]Apartment, 0)
 	queryContext, err := db.PostgreSQL.QueryContext(ctx,
 		"Select * from Apartments",

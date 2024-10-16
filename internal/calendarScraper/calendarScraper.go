@@ -47,7 +47,7 @@ func Scrap(ctx context.Context, dbModel repo.DBSql, apartment repo.Apartment) {
 			Description: event.GetProperty(ics.ComponentProperty(ics.PropertySummary)).Value,
 		}
 
-		reservation := repo.Reservaton{
+		reservation := repo.Reservation{
 			RoomNumber: apartment.RoomNumber,
 			CheckIn:    start,
 			CheckOut:   end,
@@ -60,7 +60,7 @@ func Scrap(ctx context.Context, dbModel repo.DBSql, apartment repo.Apartment) {
 
 }
 
-func writeEventInDB(ctx context.Context, dbModel repo.DBSql, r repo.Reservaton, guest repo.Guest) {
+func writeEventInDB(ctx context.Context, dbModel repo.DBSql, r repo.Reservation, guest repo.Guest) {
 	reservation, err := dbModel.ReadWithRoomNumber(ctx, r.RoomNumber, r.CheckIn.Format("2006-01-02"), r.CheckOut.Format("2006-01-02"))
 	if err != nil {
 		myLogger.Logger.Printf("writeEventInDB err: %v", err)
