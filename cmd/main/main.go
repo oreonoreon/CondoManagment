@@ -9,7 +9,6 @@ import (
 	"context"
 	"github.com/gopsql/standard"
 	"gopkg.in/yaml.v3"
-	_ "modernc.org/sqlite"
 	"os"
 )
 
@@ -43,6 +42,7 @@ func main() {
 	postgre := repo.NewRepository(db)
 
 	s := services.NewService(postgre)
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

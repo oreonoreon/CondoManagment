@@ -1,27 +1,21 @@
 package repo
 
 import (
+	"awesomeProject/internal/entities"
 	"awesomeProject/internal/myLogger"
 	"context"
 	"database/sql"
 	"github.com/google/uuid"
 )
 
-type Guest struct {
-	GuestID     uuid.UUID
-	Name        string
-	Phone       string
-	Description string
-}
+//type Guester interface {
+//	CreateGuest(ctx context.Context, g entities.Guest) (*entities.Guest, error)
+//	ReadGuest(ctx context.Context, guestID uuid.UUID) (*entities.Guest, error)
+//	FindGuestByPhoneNumber(ctx context.Context, phone string) (*entities.Guest, error)
+//}
 
-type Guester interface {
-	CreateGuest(ctx context.Context, g Guest) (*Guest, error)
-	ReadGuest(ctx context.Context, guestID uuid.UUID) (*Guest, error)
-	FindGuestByPhoneNumber(ctx context.Context, phone string) (*Guest, error)
-}
-
-func (db *Repository) CreateGuest(ctx context.Context, g Guest) (*Guest, error) {
-	guest := new(Guest)
+func (db *Repository) CreateGuest(ctx context.Context, g entities.Guest) (*entities.Guest, error) {
+	guest := new(entities.Guest)
 	queryContext := db.PostgreSQL.QueryRowContext(ctx,
 		"INSERT INTO Guests (guest_id, name, phone,description) VALUES ($1, $2, $3, $4) RETURNING *",
 		g.GuestID, g.Name, Nullable(g.Phone), g.Description)
@@ -41,8 +35,8 @@ func (db *Repository) CreateGuest(ctx context.Context, g Guest) (*Guest, error) 
 	return guest, nil
 }
 
-func (db *Repository) ReadGuest(ctx context.Context, guestID uuid.UUID) (*Guest, error) {
-	guest := new(Guest)
+func (db *Repository) ReadGuest(ctx context.Context, guestID uuid.UUID) (*entities.Guest, error) {
+	guest := new(entities.Guest)
 	queryContext := db.PostgreSQL.QueryRowContext(ctx,
 		"Select * from Guests where guest_id=$1",
 		guestID)
@@ -69,8 +63,8 @@ func Nullable(field string) interface{} {
 	return field
 }
 
-func (db *Repository) FindGuestByPhoneNumber(ctx context.Context, phone string) (*Guest, error) {
-	guest := new(Guest)
+func (db *Repository) FindGuestByPhoneNumber(ctx context.Context, phone string) (*entities.Guest, error) {
+	guest := new(entities.Guest)
 	queryContext := db.PostgreSQL.QueryRowContext(ctx,
 		"Select * from Guests where phone=$1",
 		phone)

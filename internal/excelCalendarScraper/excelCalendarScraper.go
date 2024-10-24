@@ -1,6 +1,7 @@
 package excelCalendarScraper
 
 import (
+	"awesomeProject/internal/models"
 	"awesomeProject/internal/myLogger"
 	"errors"
 	"fmt"
@@ -15,7 +16,7 @@ type ExcelFilePath struct {
 	Path string `yaml:"path"`
 }
 
-func (e ExcelFilePath) ExcelCalendarScraper() ([]BookingInfo, error) {
+func (e ExcelFilePath) ExcelCalendarScraper() ([]models.BookingInfo, error) {
 	file, err := excelize.OpenFile(e.Path)
 	if err != nil {
 		return nil, err
@@ -42,20 +43,6 @@ func (e ExcelFilePath) ExcelCalendarScraper() ([]BookingInfo, error) {
 	return bookings, err
 }
 
-func getByRows(file *excelize.File) {
-	rows, err := file.GetRows("ноя2023-ноя2024")
-	if err != nil {
-		myLogger.Logger.Fatal(err)
-	}
-
-	for i, row := range rows {
-		if i == 4 {
-			for _, col := range row {
-				myLogger.Logger.Print(col, "\t")
-			}
-		}
-	}
-}
 func datePlusOneDay(date string) (string, error) {
 	timeDate, err := time.Parse(time.DateOnly, date)
 	if err != nil {
@@ -71,10 +58,10 @@ type excelParserSettings struct {
 	dateMap   map[string]string
 }
 
-func (e excelParserSettings) getAllBookingForApartment(roomNumber string) ([]BookingInfo, error) {
+func (e excelParserSettings) getAllBookingForApartment(roomNumber string) ([]models.BookingInfo, error) {
 	date := e.startDate
 	var value string
-	bookingInfoSlice := make([]BookingInfo, 0, 15)
+	bookingInfoSlice := make([]models.BookingInfo, 0, 15)
 
 	for {
 		colum, ok := e.dateMap[date]
@@ -83,6 +70,7 @@ func (e excelParserSettings) getAllBookingForApartment(roomNumber string) ([]Boo
 			myLogger.Logger.Println(fmt.Errorf("%v: %w", date, err))
 			break
 		}
+
 		v, err := getCellValueByName(e.file, colum+strconv.Itoa(e.startRow))
 		if err != nil {
 			return nil, err
@@ -113,7 +101,7 @@ func (e excelParserSettings) getAllBookingForApartment(roomNumber string) ([]Boo
 	return bookingInfoSlice, nil
 }
 
-func parseValue(cellValue string, roomNumber string) (BookingInfo, error) {
+func parseValue(cellValue string, roomNumber string) (models.BookingInfo, error) {
 	s := strings.FieldsFunc(cellValue, func(c rune) bool {
 		return c == ':' || c == ','
 	})
@@ -124,55 +112,10 @@ func parseValue(cellValue string, roomNumber string) (BookingInfo, error) {
 		})
 	}
 
-	bookingInfo := BookingInfo{RoomNumber: roomNumber}
-	bookingInfo.parseOutBookingInfo(s)
-	return bookingInfo, nil
-}
-func (b *BookingInfo) parseOutBookingInfo(s []string) {
-	for k, v := range s {
-
-		//проверим на наличие следующего индекса в слайсе
-		if len(s) < k+1+1 {
-			return
-		}
-
-		switch v {
-		case "Name":
-			b.GuestName = s[k+1]
-		case "Check in":
-			b.CheckIn = s[k+1]
-		case "Check out":
-			b.CheckOut = s[k+1]
-		case "Price":
-			b.Price = s[k+1]
-		case "Cleaning price":
-			b.CleaningPrice = s[k+1]
-		case "Electricity and water payment":
-			b.ElectricityAndWaterPayment = s[k+1]
-		case "Adult":
-			b.Adult = s[k+1]
-		case "children":
-			b.Children = s[k+1]
-		case "Phone":
-			b.Phone = s[k+1]
-		case "Description":
-			b.Description = s[k+1]
-		}
-	}
-}
-
-type BookingInfo struct {
-	RoomNumber                 string
-	CheckIn                    string
-	CheckOut                   string
-	GuestName                  string
-	Phone                      string
-	Price                      string
-	CleaningPrice              string
-	ElectricityAndWaterPayment string
-	Adult                      string
-	Children                   string
-	Description                string
+	bookingInfo := new(models.BookingInfo)
+	bookingInfo.RoomNumber = roomNumber
+	bookingInfo.ParseOutBookingInfo(s)
+	return *bookingInfo, nil
 }
 
 func writeInMapDatesAndColumesNames(file *excelize.File, i int) (map[string]string, error) {
@@ -229,29 +172,29 @@ func writeInMapDatesAndColumesNames(file *excelize.File, i int) (map[string]stri
 
 func monthConverter(month string) (time.Month, error) {
 	switch month {
-	case "January", "январь":
+	case "January", "january", "январь":
 		return time.January, nil
-	case "February", "февраль":
+	case "February", "february", "февраль":
 		return time.February, nil
-	case "March", "март":
+	case "March", "march", "март":
 		return time.March, nil
-	case "April", "апрель":
+	case "April", "april", "апрель":
 		return time.April, nil
-	case "May", "май":
+	case "May", "may", "май":
 		return time.May, nil
-	case "June", "июнь":
+	case "June", "june", "июнь":
 		return time.June, nil
-	case "July", "июль":
+	case "July", "july", "июль":
 		return time.July, nil
-	case "August", "август":
+	case "August", "august", "август":
 		return time.August, nil
-	case "September", "сентябрь":
+	case "September", "september", "сентябрь":
 		return time.September, nil
-	case "October", "октябрь":
+	case "October", "october", "октябрь":
 		return time.October, nil
-	case "November", "ноябрь":
+	case "November", "november", "ноябрь":
 		return time.November, nil
-	case "December", "декабрь":
+	case "December", "december", "декабрь":
 		return time.December, nil
 	}
 	return 0, errors.New("error parsing name of month")
@@ -274,5 +217,20 @@ func getMergeCells(file *excelize.File) {
 		myLogger.Logger.Println(mergecell.GetCellValue())
 		myLogger.Logger.Println(mergecell.GetStartAxis())
 		myLogger.Logger.Println(mergecell.GetEndAxis())
+	}
+}
+
+func getByRows(file *excelize.File) {
+	rows, err := file.GetRows("ноя2023-ноя2024")
+	if err != nil {
+		myLogger.Logger.Fatal(err)
+	}
+
+	for i, row := range rows {
+		if i == 4 {
+			for _, col := range row {
+				myLogger.Logger.Print(col, "\t")
+			}
+		}
 	}
 }
