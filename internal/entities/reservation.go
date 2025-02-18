@@ -6,7 +6,7 @@ import (
 )
 
 type Reservation struct {
-	Oid                        int
+	Oid                        int       `db:"id"`
 	RoomNumber                 string    `db:"room_number"`
 	GuestID                    uuid.UUID `db:"guest_id"`
 	CheckIn                    time.Time `db:"check_in"`

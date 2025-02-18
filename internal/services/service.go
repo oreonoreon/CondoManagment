@@ -2,31 +2,35 @@ package services
 
 import (
 	"awesomeProject/internal/entities"
+	"awesomeProject/internal/erro"
 	"awesomeProject/internal/models"
 	"context"
-	"log"
+	"errors"
+	"fmt"
+	"go.uber.org/zap"
+	"time"
 )
 
-//type Service struct {
-//	storage *repo.Repository
-//}
-//
-//func NewService(storage *repo.Repository) *Service {
-//	return &Service{storage: storage}
-//}
-
 type Service struct {
-	storage Storage
+	storageReservation StorageReservation
+	storageGuest       StorageGuest
 }
 
-type Storage interface {
+type StorageReservation interface {
 	Create(ctx context.Context, r entities.Reservation) (*entities.Reservation, error)
+	ReadWithRoomNumber(ctx context.Context, roomNumber string, checkin, checkout time.Time) ([]entities.Reservation, error)
+}
+
+type StorageGuest interface {
 	CreateGuest(ctx context.Context, g entities.Guest) (*entities.Guest, error)
 	FindGuestByPhoneNumber(ctx context.Context, phone string) (*entities.Guest, error)
 }
 
-func NewService(storage Storage) *Service {
-	return &Service{storage: storage}
+func NewService(storage StorageReservation, storageGuest StorageGuest) *Service {
+	return &Service{
+		storageReservation: storage,
+		storageGuest:       storageGuest,
+	}
 }
 
 func (s *Service) CreateReservation(ctx context.Context, booking models.BookingInfo) error {
@@ -34,14 +38,14 @@ func (s *Service) CreateReservation(ctx context.Context, booking models.BookingI
 	if err != nil {
 		return err
 	}
-	log.Println(*g)
+	zap.L().Debug("CreateReservation", zap.Any("entities.Guest", *g))
 
-	guest, err := s.storage.FindGuestByPhoneNumber(ctx, booking.Phone)
+	guest, err := s.storageGuest.FindGuestByPhoneNumber(ctx, booking.Phone)
 	if err != nil {
 		return err
 	}
 	if guest == nil {
-		guest, err = s.storage.CreateGuest(ctx, *g)
+		guest, err = s.storageGuest.CreateGuest(ctx, *g)
 		if err != nil {
 			return err
 		}
@@ -51,17 +55,54 @@ func (s *Service) CreateReservation(ctx context.Context, booking models.BookingI
 	if err != nil {
 		return err
 	}
-	log.Println(*reserv)
-	_, err = s.storage.Create(ctx, *reserv)
+	zap.L().Debug("CreateReservation", zap.Any("entities.Reservation", *reserv))
+
+	//чекнем пересечение по датам на эту комнату
+	values, err := s.storageReservation.ReadWithRoomNumber(ctx, reserv.RoomNumber, reserv.CheckIn, reserv.CheckOut)
+	if err != nil {
+		return err
+	}
+	if len(values) > 0 {
+		if len(values) == 1 {
+			if values[0].CheckIn.UTC() == reserv.CheckIn &&
+				values[0].CheckOut.UTC() == reserv.CheckOut &&
+				values[0].Price == reserv.Price &&
+				values[0].RoomNumber == reserv.RoomNumber {
+				return fmt.Errorf("%w\nзаписываемое значение: %v;\nзначение из БД: %v;", erro.ErrFullyMatchOtherBooking, booking, values[0])
+			}
+		}
+		return errors.New(fmt.Sprintf("Букинг: %v ; пересекается со следуюшим бронированиями: %v ;", booking, values))
+	}
+
+	//запишем новое бронирование в бд
+	_, err = s.storageReservation.Create(ctx, *reserv)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-// Создание репорта для собственика
-func CreateReport() {
+//func (s *Service) GetBookingForPeriodByApartment(ctx context.Context, roomNumber string, start string, end string) error {
+//	checkin, err := models.TimeConvert(start)
+//	if err != nil {
+//		return err
+//	}
+//
+//	checkout, err := models.TimeConvert(end)
+//	if err != nil {
+//		return err
+//	}
+//
+//	bookings, err := s.storageReservation.ReadWithRoomNumber(ctx, roomNumber, checkin, checkout)
+//	if err != nil {
+//		return err
+//	}
+//
+//}
 
+// Создание репорта для собственика
+func (s *Service) CreateReport(ctx context.Context, roomNumber string, startPeriod string, endPeriod string) ([]entities.Reservation, error) {
+	return nil, nil
 }
 
 // Оповещение собственика о предстоящем бронирование
@@ -78,90 +119,3 @@ func FreeApartmentForDates() {
 func AproksimatePrice() {
 
 }
-
-//func dbModelConvertGuest(booking excelCalendarScraper.BookingInfo) (*entities.Guest, error) {
-//	id := uuid.New()
-//	return &entities.Guest{
-//		GuestID:     id,
-//		Name:        booking.GuestName,
-//		Phone:       booking.Phone,
-//		Description: "",
-//	}, nil
-//}
-//
-//func dbModelConvert(booking excelCalendarScraper.BookingInfo, uuid uuid.UUID) (*entities.Reservation, error) {
-//	timeFormat := "02.01.2006"
-//	checkIn, err := time.Parse(timeFormat, booking.CheckIn)
-//	if err != nil {
-//		return nil, err
-//	}
-//	checkOut, err := time.Parse(timeFormat, booking.CheckOut)
-//	if err != nil {
-//		return nil, err
-//	}
-//
-//	var price int
-//	if booking.Price != "" {
-//		price, err = strconv.Atoi(booking.Price)
-//		if err != nil {
-//			return nil, err
-//		}
-//	}
-//
-//	var cleaningPrice int
-//	if booking.CleaningPrice != "" {
-//		cleaningPrice, err = strconv.Atoi(booking.CleaningPrice)
-//		if err != nil {
-//			return nil, err
-//		}
-//	}
-//
-//	var adult int
-//	if booking.Adult != "" {
-//		adult, err = strconv.Atoi(booking.Adult)
-//		if err != nil {
-//			return nil, err
-//		}
-//	}
-//
-//	var children int
-//	if booking.Children != "" {
-//		children, err = strconv.Atoi(booking.Children)
-//		if err != nil {
-//			return nil, err
-//		}
-//	}
-//
-//	return &entities.Reservation{
-//		Oid:                        0,
-//		RoomNumber:                 booking.RoomNumber,
-//		GuestID:                    uuid,
-//		CheckIn:                    checkIn,
-//		CheckOut:                   checkOut,
-//		Price:                      price,
-//		CleaningPrice:              cleaningPrice,
-//		ElectricityAndWaterPayment: booking.ElectricityAndWaterPayment,
-//		Adult:                      adult,
-//		Children:                   children,
-//		Description:                booking.Description,
-//	}, nil
-//}
-//
-//func stringToInt(str ...string) ([]int, error) {
-//	i := make([]int, 0)
-//	for _, s := range str {
-//		var v int
-//		var err error
-//		if s != "" {
-//			v, err = strconv.Atoi(s)
-//			if err != nil {
-//				return nil, err
-//			}
-//
-//		} else {
-//			v = 0
-//		}
-//		i = append(i, v)
-//	}
-//	return i, nil
-//}

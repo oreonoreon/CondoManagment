@@ -5,12 +5,6 @@ import (
 	"context"
 )
 
-//type Apartmenter interface {
-//	CreateApartment(ctx context.Context, apartment entities.Apartment) error
-//	ReadApartment(ctx context.Context, roomNumber string) (*entities.Apartment, error)
-//	ReadApartmentAll(ctx context.Context) ([]entities.Apartment, error)
-//}
-
 func (db *Repository) CreateApartment(ctx context.Context, apartment entities.Apartment) error {
 	_, err := db.PostgreSQL.QueryContext(ctx,
 		"INSERT INTO Apartments (room_number, description,airbnb_calendar) VALUES ($1,$2,$3)",

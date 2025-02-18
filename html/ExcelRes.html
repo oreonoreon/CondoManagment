@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en" >
+<head>
+    <meta charset="UTF-8">
+    <title>ExcelRes</title>
+</head>
+<body>
+{{ range .}}
+<dl>
+    <dt>RoomNumber: {{.RoomNumber}}</dt>
+    <dt>CheckIn: {{.CheckIn}}</dt>
+    <dt>CheckOut: {{.CheckOut}}</dt>
+    <dt>GuestName: {{.GuestName}}</dt>
+    <dt>Phone: {{.Phone}}</dt>
+    <dt>Price: {{.Price}}</dt>
+    <dt>CleaningPrice: {{.CleaningPrice}}</dt>
+    <dt>ElectricityAndWaterPayment: {{.ElectricityAndWaterPayment}}</dt>
+    <dt>Adult: {{.Adult}}</dt>
+    <dt>Children: {{.Children}}</dt>
+    <dt>Description: {{.Description}}</dt>
+    {{ end }}
+
+</dl>
+</body>
+</html>
+

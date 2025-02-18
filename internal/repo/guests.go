@@ -2,17 +2,11 @@ package repo
 
 import (
 	"awesomeProject/internal/entities"
-	"awesomeProject/internal/myLogger"
 	"context"
 	"database/sql"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
-
-//type Guester interface {
-//	CreateGuest(ctx context.Context, g entities.Guest) (*entities.Guest, error)
-//	ReadGuest(ctx context.Context, guestID uuid.UUID) (*entities.Guest, error)
-//	FindGuestByPhoneNumber(ctx context.Context, phone string) (*entities.Guest, error)
-//}
 
 func (db *Repository) CreateGuest(ctx context.Context, g entities.Guest) (*entities.Guest, error) {
 	guest := new(entities.Guest)
@@ -71,7 +65,7 @@ func (db *Repository) FindGuestByPhoneNumber(ctx context.Context, phone string) 
 
 	err := queryContext.Scan(&guest.GuestID, &guest.Name, &guest.Phone, &guest.Description)
 	if err == db.PostgreSQL.ErrNoRows() {
-		myLogger.Logger.Println(err)
+		zap.L().Debug("FindGuestByPhoneNumber", zap.Error(err))
 		return nil, nil
 	}
 	if err != nil {

@@ -64,6 +64,32 @@ func (b BookingInfo) DbModelConvertGuest() (*entities.Guest, error) {
 	}, nil
 }
 
+func TimeConvert(date string) (time.Time, error) {
+	timeFormat := "02.01.2006"
+	t, err := time.Parse(timeFormat, date)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return t, nil
+}
+
+//func DbEntitiesConvert(reservation entities.Reservation, guest entities.Guest) (*BookingInfo, error) {
+//
+//	return &BookingInfo{
+//		RoomNumber:                 reservation.RoomNumber,
+//		CheckIn:                    reservation.CheckIn,
+//		CheckOut:                   reservation.CheckOut,
+//		GuestName:                  guest.Name,
+//		Phone:                      guest.Phone,
+//		Price:                      reservation.Price,
+//		CleaningPrice:              reservation.CleaningPrice,
+//		ElectricityAndWaterPayment: reservation.ElectricityAndWaterPayment,
+//		Adult:                      reservation.Adult,
+//		Children:                   reservation.Children,
+//		Description:                reservation.Description,
+//	}, nil
+//}
+
 func (b BookingInfo) DbModelConvert(uuid uuid.UUID) (*entities.Reservation, error) {
 	timeFormat := "02.01.2006"
 	checkIn, err := time.Parse(timeFormat, b.CheckIn)

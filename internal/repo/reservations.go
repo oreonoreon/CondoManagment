@@ -3,15 +3,8 @@ package repo
 import (
 	"awesomeProject/internal/entities"
 	"context"
+	"time"
 )
-
-//type Reservator interface {
-//	Delete(ctx context.Context)
-//	Create(ctx context.Context, r entities.Reservation) (*entities.Reservation, error)
-//	Read(ctx context.Context, checkin, checkout string) ([]entities.Reservation, error)
-//	ReadWithRoomNumber(ctx context.Context, roomNumber, checkin, checkout string) ([]entities.Reservation, error)
-//	Update(ctx context.Context, id int, checkIn, checkOut string) error
-//}
 
 func (db *Repository) Delete(ctx context.Context) {
 
@@ -64,6 +57,8 @@ func (db *Repository) Create(ctx context.Context, r entities.Reservation) (*enti
 		&reservation.Adult,
 		&reservation.Children,
 		&reservation.Description,
+		&reservation.Days,
+		&reservation.PriceForOneNight,
 	)
 	if err != nil {
 		return nil, err
@@ -94,7 +89,7 @@ func (db *Repository) Read(ctx context.Context, checkin, checkout string) ([]ent
 	return reservations, nil
 }
 
-func (db *Repository) ReadWithRoomNumber(ctx context.Context, roomNumber, checkin, checkout string) ([]entities.Reservation, error) {
+func (db *Repository) ReadWithRoomNumber(ctx context.Context, roomNumber string, checkin, checkout time.Time) ([]entities.Reservation, error) {
 	reservations := make([]entities.Reservation, 0, 0)
 	queryContext, err := db.PostgreSQL.QueryContext(ctx,
 		"Select * from Reservations where (check_in, check_out) OVERLAPS ($1, $2) AND room_number=$3",
@@ -106,7 +101,57 @@ func (db *Repository) ReadWithRoomNumber(ctx context.Context, roomNumber, checki
 
 	for queryContext.Next() {
 		var reservation entities.Reservation
-		err = queryContext.Scan(&reservation.Oid, &reservation.RoomNumber, &reservation.GuestID, &reservation.CheckIn, &reservation.CheckOut)
+		err = queryContext.Scan(
+			&reservation.Oid,
+			&reservation.RoomNumber,
+			&reservation.GuestID,
+			&reservation.CheckIn,
+			&reservation.CheckOut,
+			&reservation.Price,
+			&reservation.CleaningPrice,
+			&reservation.ElectricityAndWaterPayment,
+			&reservation.Adult,
+			&reservation.Children,
+			&reservation.Description,
+			&reservation.Days,
+			&reservation.PriceForOneNight,
+		)
+		if err != nil {
+			return nil, err
+		}
+		reservations = append(reservations, reservation)
+	}
+
+	return reservations, nil
+}
+
+func (db *Repository) ReadForReport(ctx context.Context, roomNumber, startPeriod, endPeriod string) ([]entities.Reservation, error) {
+	reservations := make([]entities.Reservation, 0, 0)
+	queryContext, err := db.PostgreSQL.QueryContext(ctx,
+		"Select * from Reservations where check_in>=$1 AND check_out<=$2 AND room_number=$3",
+		startPeriod, endPeriod, roomNumber)
+	if err != nil {
+		return nil, err
+	}
+	defer queryContext.Close()
+
+	for queryContext.Next() {
+		var reservation entities.Reservation
+		err = queryContext.Scan(
+			&reservation.Oid,
+			&reservation.RoomNumber,
+			&reservation.GuestID,
+			&reservation.CheckIn,
+			&reservation.CheckOut,
+			&reservation.Price,
+			&reservation.CleaningPrice,
+			&reservation.ElectricityAndWaterPayment,
+			&reservation.Adult,
+			&reservation.Children,
+			&reservation.Description,
+			&reservation.Days,
+			&reservation.PriceForOneNight,
+		)
 		if err != nil {
 			return nil, err
 		}

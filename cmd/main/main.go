@@ -1,30 +1,31 @@
 package main
 
 import (
-	"awesomeProject/internal/eventProcessor"
-	"awesomeProject/internal/excelCalendarScraper"
-	"awesomeProject/internal/myLogger"
+	"awesomeProject/internal/config"
 	"awesomeProject/internal/repo"
+	"awesomeProject/internal/server"
 	"awesomeProject/internal/services"
 	"context"
 	"github.com/gopsql/standard"
-	"gopkg.in/yaml.v3"
-	"os"
+	"go.uber.org/zap"
 )
 
 func main() {
-	var excelFilePath excelCalendarScraper.ExcelFilePath
-	conf, err := os.ReadFile("./etc/config.yaml")
-	if err != nil {
-		myLogger.Logger.Println(err)
-	}
+	conf := config.InitConfig()
 
-	err = yaml.Unmarshal(conf, &excelFilePath)
-	if err != nil {
-		myLogger.Logger.Println(err)
+	zapConfig := zap.NewProductionConfig()
+	if conf.DebugLogLevel {
+		zapConfig.Level = zap.NewAtomicLevelAt(zap.DebugLevel)
 	}
+	zapConfig.OutputPaths = []string{conf.LogPath}
+	logger, err := zapConfig.Build()
 
-	myLogger.Logger.Println(excelFilePath)
+	defer zap.L().Sync()
+
+	undo := zap.ReplaceGlobals(logger)
+	defer undo()
+
+	zap.L().Info("APPLICATION START")
 
 	//create Db connection
 	db, err := repo.ConnectionPostgreSQl()
@@ -35,21 +36,47 @@ func main() {
 	defer func(db *standard.DB) {
 		err := db.Close()
 		if err != nil {
-			myLogger.Logger.Println(err)
+			zap.L().Error("db.Close()", zap.Error(err))
 		}
 	}(db)
 
+	//db
 	postgre := repo.NewRepository(db)
 
-	s := services.NewService(postgre)
+	//services
+	serviceReservation := services.NewService(postgre, postgre)
+	serviceSettings := services.NewServiceSettings(postgre)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	err = eventProcessor.ProcesFullfilingDBWithDataFromExcel(ctx, s, excelFilePath)
+	//writing in db the settings
+	_, err = serviceSettings.Set(ctx, &conf)
 	if err != nil {
-		myLogger.Logger.Println(err)
+		panic(err)
 	}
 
-	//server.Server(postgre)
+	//services
+	serviceExcel := services.NewServiceExcel(postgre)
+
+	//handlers
+	handler := server.NewHandle(serviceReservation, serviceSettings, serviceExcel)
+
+	//server
+	ser := server.NewServer(handler)
+	ser.StartServer()
+
 }
+
+//func excel(ctx context.Context, s *services.Service, conf config.Config) {
+//	//config := excelCalendarScraper.NewSheetConfig("ноя2024-ноя2025", 5, "1", "2", 4, 3)
+//	searchPeriod := excelCalendarScraper.NewSearchPeriod("2024-11-01", "2025-11-01")
+//
+//	//config := excelCalendarScraper.NewSheetConfig("ноя2023-ноя2024", 7, "1", "2", 4, 3)
+//	//searchPeriod := excelCalendarScraper.NewSearchPeriod("2023-11-01", "2024-11-01")
+//
+//	err := eventProcessor.P(ctx, s, conf.ExcelFilePath, conf, searchPeriod, "F107")
+//	if err != nil {
+//		zap.L().Error("P", zap.Error(err))
+//	}
+//}
