@@ -1,8 +1,9 @@
 package excelCalendarScraper
 
 import (
-	"awesomeProject/internal/models"
+	"awesomeProject/internal/excelCalendarScraper/models"
 	"errors"
+	"fmt"
 	"github.com/xuri/excelize/v2"
 	"go.uber.org/zap"
 	"strconv"
@@ -94,7 +95,8 @@ func (e Sheet) GetBookingForPeriod(roomNumber string, searchPeriod SearchPeriod)
 			if date == searchPeriod.endDate {
 				bookingInfo, err := parseValue(value, roomNumber)
 				if err != nil {
-					zap.L().Error("getAllBookingForApartment", zap.Error(err))
+					zap.L().Error("getAllBookingForApartment", zap.Error(err), zap.Any("bookingInfo", bookingInfo))
+					return nil, fmt.Errorf("%w:\n%v", err, bookingInfo)
 				}
 				bookingInfoSlice = append(bookingInfoSlice, bookingInfo)
 			}
@@ -102,7 +104,8 @@ func (e Sheet) GetBookingForPeriod(roomNumber string, searchPeriod SearchPeriod)
 		case value != v:
 			bookingInfo, err := parseValue(value, roomNumber)
 			if err != nil {
-				zap.L().Error("getAllBookingForApartment", zap.Error(err))
+				zap.L().Error("getAllBookingForApartment", zap.Error(err), zap.Any("bookingInfo", bookingInfo))
+				return nil, fmt.Errorf("%w:\n%v", err, bookingInfo)
 			}
 			bookingInfoSlice = append(bookingInfoSlice, bookingInfo)
 			value = v

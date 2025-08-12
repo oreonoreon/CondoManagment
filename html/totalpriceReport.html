@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8" />
+    <title>Registration</title>
+    <style>
+        .block-left{width:50%;float:left;}
+    .block-right{width:50%;float:right;}
+        /* Ключи не будут выделяться */
+        .noselect {
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+        /* Значения по‑умолчанию выделяемы */
+        .selectable {
+            -webkit-user-select: text;
+            -moz-user-select: text;
+            -ms-user-select: text;
+            user-select: text;
+        }
+    .central{width: 100%;}
+    </style>
+
+</head>
+<body>
+<div class="central">
+    <form method="POST" action="/totalpriceReport">
+        <label>Start period</label><input name="start" type="date" value="" />
+        <label>End period</label><input name="end" type="date" value="" />
+        <input type="submit" name="Count" value="Count" />
+    </form>
+</div>
+<ul>
+    {{- range $key, $value := .Info }}
+    <li>
+        <!-- Ключ не выделяется -->
+        <span class="noselect"><strong>{{ $key }}:</strong></span>
+        <!-- Значение можно выделить -->
+        <span class="selectable">{{ $value }}</span>
+    </li>
+    {{- end }}
+</ul>
+
+
+</body>
+</html>

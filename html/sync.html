@@ -3,9 +3,14 @@
 <head>
     <meta charset="UTF-8" />
     <title>Registration</title>
+    <style>.block-left{width:50%;float:left;}
+    .block-right{width:50%;float:right;}
+    .central{width: 100%;}
+    </style>
+
 </head>
 <body>
-<div>
+<div class="central">
     <form method="POST" action="/sync">
         <label>sheet name </label><input name="sheet_name" type="text" value="" />
         <label>Apartment number </label><input name="room_number" type="text" value="" />
@@ -14,5 +19,66 @@
         <input type="submit" name="sync" value="Sync" />
     </form>
 </div>
+
+<div class="central">
+    <div class="block-left">
+
+        {{ range .Bookings}}
+        <dl>
+
+            <dt>GuestID: {{.Guest.GuestID}}</dt>
+            <dt>Name: {{.Guest.Name}}</dt>
+            <dt>Phone: {{.Guest.Phone}}</dt>
+            <dt>Description: {{.Guest.Description}}</dt>
+            <br>
+            <dt>Oid: {{.Reservation.Oid}}</dt>
+            <dt>RoomNumber: {{.Reservation.RoomNumber}}</dt>
+            <dt>GuestID: {{.Reservation.GuestID}}</dt>
+            <dt>CheckIn: {{.Reservation.CheckIn}}</dt>
+            <dt>CheckOut: {{.Reservation.CheckOut}}</dt>
+            <dt>Price: {{.Reservation.Price}}</dt>
+            <dt>CleaningPrice: {{.Reservation.CleaningPrice}}</dt>
+            <dt>ElectricityAndWaterPayment: {{.Reservation.ElectricityAndWaterPayment}}</dt>
+            <dt>Adult: {{.Reservation.Adult}}</dt>
+            <dt>Children: {{.Reservation.Children}}</dt>
+            <dt>Description: {{.Reservation.Description}}</dt>
+            <dt>Days: {{.Reservation.Days}}</dt>
+            <dt>PriceForOneNight: {{.Reservation.PriceForOneNight}}</dt>
+
+        </dl>
+        {{ end }}
+
+    </div>
+
+    <div class="block-right">
+
+        {{ range .BookingsFromDB}}
+        <dl>
+            <dt>GuestID: {{.Guest.GuestID}}</dt>
+            <dt>Name: {{.Guest.Name}}</dt>
+            <dt>Phone: {{.Guest.Phone}}</dt>
+            <dt>Description: {{.Guest.Description}}</dt>
+            <br>
+            <dt>Oid: {{.Reservation.Oid}}</dt>
+            <dt>RoomNumber: {{.Reservation.RoomNumber}}</dt>
+            <dt>GuestID: {{.Reservation.GuestID}}</dt>
+            <dt>CheckIn: {{.Reservation.CheckIn}}</dt>
+            <dt>CheckOut: {{.Reservation.CheckOut}}</dt>
+            <dt>Price: {{.Reservation.Price}}</dt>
+            <dt>CleaningPrice: {{.Reservation.CleaningPrice}}</dt>
+            <dt>ElectricityAndWaterPayment: {{.Reservation.ElectricityAndWaterPayment}}</dt>
+            <dt>Adult: {{.Reservation.Adult}}</dt>
+            <dt>Children: {{.Reservation.Children}}</dt>
+            <dt>Description: {{.Reservation.Description}}</dt>
+            <dt>Days: {{.Reservation.Days}}</dt>
+            <dt>PriceForOneNight: {{.Reservation.PriceForOneNight}}</dt>
+
+        </dl>
+        {{ end }}
+
+    </div>
+</div>
+
+
 </body>
 </html>

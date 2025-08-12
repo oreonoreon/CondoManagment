@@ -31,6 +31,14 @@ func (s *ServiceSettings) Set(ctx context.Context, converter SettingsConverter) 
 		return nil, err
 	}
 
+	if set == nil {
+		set, err = s.storageSettings.Set(ctx, settings)
+		if err != nil {
+			return nil, err
+		}
+		return set, nil
+	}
+
 	if *set != settings {
 		set, err = s.storageSettings.SettingsUpdate(ctx, settings)
 		if err != nil {

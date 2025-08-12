@@ -1,8 +1,8 @@
 package entities
 
 type Apartment struct {
-	Oid            int
+	Oid            int    `json:"oid"`
 	RoomNumber     string `json:"room_number"`
-	Description    string
-	AirbnbCalendar string
+	Description    string `json:"description"`
+	AirbnbCalendar string `json:"airbnbCalendar"`
 }

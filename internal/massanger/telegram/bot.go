@@ -4,6 +4,7 @@ import (
 	"awesomeProject/internal/myLogger"
 	"flag"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"go.uber.org/zap"
 	"net/http"
 	"os"
 )
@@ -21,25 +22,29 @@ func init() {
 	var err error
 	bot, err = tgbotapi.NewBotAPI(GetYourCurrencyRate)
 	if err != nil {
-		myLogger.Logger.Panic(err)
+		zap.L().Error("tgbotapi.NewBotAPI", zap.Error(err))
+		return
 	}
 	bot.Debug = false
-	myLogger.Logger.Printf("Authorized on account %s", bot.Self.UserName)
+	zap.L().Info("Authorized on account", zap.String("bot.Self.UserName", bot.Self.UserName))
 }
 
 func newBot() tgbotapi.UpdatesChannel {
 	if *webhook != "" {
 		wh, err := tgbotapi.NewWebhook(*webhook)
 		if err != nil {
-			myLogger.Logger.Fatal(err)
+			zap.L().Error("", zap.Error(err))
+			return nil
 		}
 
 		if _, err = bot.Request(wh); err != nil {
-			myLogger.Logger.Fatal(err)
+			zap.L().Error("", zap.Error(err))
+			return nil
 		}
 		info, err := bot.GetWebhookInfo()
 		if err != nil {
-			myLogger.Logger.Fatal(err)
+			zap.L().Error("", zap.Error(err))
+			return nil
 		}
 
 		if info.LastErrorDate != 0 {
@@ -57,7 +62,8 @@ func newBot() tgbotapi.UpdatesChannel {
 		wh := tgbotapi.DeleteWebhookConfig{DropPendingUpdates: true}
 
 		if _, err := bot.Request(wh); err != nil {
-			myLogger.Logger.Fatal(err)
+			zap.L().Error("", zap.Error(err))
+			return nil
 		}
 		u := tgbotapi.NewUpdate(0)
 		u.Timeout = 60
