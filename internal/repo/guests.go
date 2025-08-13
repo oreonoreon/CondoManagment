@@ -4,6 +4,7 @@ import (
 	"awesomeProject/internal/entities"
 	"context"
 	"database/sql"
+	"errors"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
@@ -37,6 +38,9 @@ func (db *Repository) ReadGuest(ctx context.Context, guestID uuid.UUID) (*entiti
 
 	var sPhone sql.NullString
 	err := queryContext.Scan(&guest.GuestID, &guest.Name, &sPhone, &guest.Description)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}

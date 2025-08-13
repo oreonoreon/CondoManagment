@@ -1,6 +1,7 @@
 package excelCalendarScraper
 
 import (
+	"errors"
 	"github.com/xuri/excelize/v2"
 	"go.uber.org/zap"
 	"regexp"
@@ -20,9 +21,11 @@ func (s SheetConfig) apartmentsMap(file *excelize.File) (map[string]int, error) 
 			return nil, err
 		}
 
-		values := validate(value)
-
 		if value != "" {
+			values, err := validate(value)
+			if err != nil {
+				return nil, err
+			}
 			apartmentsMap[values[0]] = s.StartRow
 			s.StartRow++
 		} else {
@@ -33,9 +36,12 @@ func (s SheetConfig) apartmentsMap(file *excelize.File) (map[string]int, error) 
 	return apartmentsMap, nil
 }
 
-func validate(value string) []string {
-	r := regexp.MustCompile(`[A-Z]{1,2}[0-9]{3}`)
+func validate(value string) ([]string, error) {
+	r := regexp.MustCompile(`[A-Z]{1,2}[0-9]{3}-?[0-9]{0,3}`)
 	sliceStrings := r.FindAllString(value, -1)
-
-	return sliceStrings
+	if len(sliceStrings) == 0 {
+		zap.L().Debug("validate value", zap.Any("value", value))
+		return nil, errors.New("validate failed")
+	}
+	return sliceStrings, nil
 }

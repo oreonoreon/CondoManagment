@@ -4,9 +4,9 @@
   debugLogLevel: true
   sheetConfig:
       path: /mnt/c/Users/F15/Downloads/Календарь Заселения.xlsx
-      name: ноя2024-ноя2025
-      startColumNum: 6
+      name: ноя2023-ноя2024
+      startColumNum: 7
       yearAndMonthRowNum: 1
       daysRowNum: 2
       startRow: 4
-      apartmentColumNum: 4
+      apartmentColumNum: 3

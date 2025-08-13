@@ -3,6 +3,8 @@ package repo
 import (
 	"awesomeProject/internal/entities"
 	"context"
+	"database/sql"
+	"errors"
 )
 
 func (db *Repository) Set(ctx context.Context, settings entities.Settings) (*entities.Settings, error) {
@@ -63,6 +65,9 @@ func (db *Repository) Get(ctx context.Context, sheetName string) (*entities.Sett
 		&set.SheetStartRow,
 		&set.SheetApartmentColumNum,
 	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}

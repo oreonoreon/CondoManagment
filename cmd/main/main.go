@@ -8,12 +8,15 @@ import (
 	"context"
 	"github.com/gopsql/standard"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"time"
 )
 
 func main() {
 	conf := config.InitConfig()
 
 	zapConfig := zap.NewProductionConfig()
+	zapConfig.EncoderConfig.EncodeTime = zapcore.TimeEncoderOfLayout(time.RFC3339)
 	if conf.DebugLogLevel {
 		zapConfig.Level = zap.NewAtomicLevelAt(zap.DebugLevel)
 	}
@@ -57,26 +60,14 @@ func main() {
 	}
 
 	//services
-	serviceExcel := services.NewServiceExcel(postgre)
+	serviceExcel := services.NewServiceExcel(postgre, serviceReservation)
+	serviceApartment := services.NewServiceApartment(postgre)
+	serviceBnB := services.NewServiceBnB(postgre, postgre, postgre, postgre, postgre)
+	servicesUsers := services.NewServiceUsers(postgre)
 
 	//handlers
-	handler := server.NewHandle(serviceReservation, serviceSettings, serviceExcel)
+	handler := server.NewHandle(serviceReservation, serviceSettings, serviceExcel, serviceApartment, serviceBnB, servicesUsers)
 
 	//server
-	ser := server.NewServer(handler)
-	ser.StartServer()
-
+	server.Gin(handler)
 }
-
-//func excel(ctx context.Context, s *services.Service, conf config.Config) {
-//	//config := excelCalendarScraper.NewSheetConfig("ноя2024-ноя2025", 5, "1", "2", 4, 3)
-//	searchPeriod := excelCalendarScraper.NewSearchPeriod("2024-11-01", "2025-11-01")
-//
-//	//config := excelCalendarScraper.NewSheetConfig("ноя2023-ноя2024", 7, "1", "2", 4, 3)
-//	//searchPeriod := excelCalendarScraper.NewSearchPeriod("2023-11-01", "2024-11-01")
-//
-//	err := eventProcessor.P(ctx, s, conf.ExcelFilePath, conf, searchPeriod, "F107")
-//	if err != nil {
-//		zap.L().Error("P", zap.Error(err))
-//	}
-//}

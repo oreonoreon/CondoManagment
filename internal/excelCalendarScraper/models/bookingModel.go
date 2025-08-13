@@ -2,7 +2,9 @@ package models
 
 import (
 	"awesomeProject/internal/entities"
+	"awesomeProject/internal/erro"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 	"strconv"
 	"time"
 )
@@ -54,6 +56,32 @@ func (b *BookingInfo) ParseOutBookingInfo(s []string) {
 	}
 }
 
+func (b *BookingInfo) Validate() error {
+	err := b.HaveName()
+	if err != nil {
+		return err
+	}
+	err = b.HaveName()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (b *BookingInfo) HaveName() error {
+	if b.GuestName == "" {
+		return erro.ErrBookingExcelModelHaveNotName
+	}
+	return nil
+}
+
+func (b *BookingInfo) HavePhone() error {
+	if b.Phone == "+" || b.Phone == "@" {
+		return erro.ErrBookingExcelModelHaveNotPhone
+	}
+	return nil
+}
+
 func (b BookingInfo) DbModelConvertGuest() (*entities.Guest, error) {
 	id := uuid.New()
 	return &entities.Guest{
@@ -68,27 +96,16 @@ func TimeConvert(date string) (time.Time, error) {
 	timeFormat := "02.01.2006"
 	t, err := time.Parse(timeFormat, date)
 	if err != nil {
+		zap.L().Info("TimeConvert", zap.Error(err))
+		//return time.Time{}, err
+	}
+	timeFormat = "2006-01-02"
+	t, err = time.Parse(timeFormat, date)
+	if err != nil {
 		return time.Time{}, err
 	}
 	return t, nil
 }
-
-//func DbEntitiesConvert(reservation entities.Reservation, guest entities.Guest) (*BookingInfo, error) {
-//
-//	return &BookingInfo{
-//		RoomNumber:                 reservation.RoomNumber,
-//		CheckIn:                    reservation.CheckIn,
-//		CheckOut:                   reservation.CheckOut,
-//		GuestName:                  guest.Name,
-//		Phone:                      guest.Phone,
-//		Price:                      reservation.Price,
-//		CleaningPrice:              reservation.CleaningPrice,
-//		ElectricityAndWaterPayment: reservation.ElectricityAndWaterPayment,
-//		Adult:                      reservation.Adult,
-//		Children:                   reservation.Children,
-//		Description:                reservation.Description,
-//	}, nil
-//}
 
 func (b BookingInfo) DbModelConvert(uuid uuid.UUID) (*entities.Reservation, error) {
 	timeFormat := "02.01.2006"

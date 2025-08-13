@@ -1,7 +1,7 @@
 package excelCalendarScraper
 
 import (
-	"awesomeProject/internal/models"
+	"awesomeProject/internal/excelCalendarScraper/models"
 	"github.com/xuri/excelize/v2"
 	"strings"
 	"time"
@@ -61,6 +61,10 @@ func parseValue(cellValue string, roomNumber string) (models.BookingInfo, error)
 	bookingInfo := new(models.BookingInfo)
 	bookingInfo.RoomNumber = roomNumber
 	bookingInfo.ParseOutBookingInfo(s)
+	err := bookingInfo.Validate()
+	if err != nil {
+		return *bookingInfo, err
+	}
 	return *bookingInfo, nil
 }
 

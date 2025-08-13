@@ -2,7 +2,7 @@ package config
 
 import (
 	"awesomeProject/internal/entities"
-	"awesomeProject/internal/models"
+	"awesomeProject/internal/excelCalendarScraper/models"
 	"gopkg.in/yaml.v3"
 	"os"
 )
