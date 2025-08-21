@@ -76,9 +76,11 @@ func Gin(h Handle) {
 		api.GET("/report", h.Report)
 		api.POST("/report", h.Report)
 
-		api.POST("/", h.BookingsPost)
+		api.POST("/r", h.BookingsPost)
 
-		api.GET("/", h.ApartmentsGet)
+		api.GET("/r", h.ApartmentsGet)
+
+		api.PATCH("/updateBooking/:id", h.UpdateBooking)
 
 		api.POST("/createBooking", h.CreateBookingPost)
 
@@ -119,6 +121,30 @@ func NewHandle(
 		servicesBnB,
 		servicesUsers,
 	}
+}
+
+func (h *Handle) UpdateBooking(c *gin.Context) {
+	//id, err := strconv.Atoi(c.Param("id"))
+	//if err != nil {
+	//	zap.L().Error("UpdateBooking", zap.Error(err))
+	//	c.String(http.StatusBadRequest, err.Error())
+	//	return
+	//}
+	//
+	//request := new(entities.Booking)
+	//
+	//err := c.BindJSON(request)
+	//if err != nil {
+	//	zap.L().Error("CreateBookingPost", zap.Error(err))
+	//	c.String(http.StatusBadRequest, err.Error())
+	//	return
+	//}
+	//if request == nil {
+	//	erro := errors.New("request contain error")
+	//	zap.L().Error("CreateBookingPost", zap.Error(erro))
+	//	c.String(http.StatusBadRequest, erro.Error())
+	//}
+
 }
 
 func (h *Handle) DeleteBookingByID(c *gin.Context) {
