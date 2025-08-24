@@ -2,6 +2,7 @@ package server
 
 import (
 	"awesomeProject/internal/entities"
+	"awesomeProject/internal/repo"
 	"awesomeProject/internal/services"
 	"database/sql"
 	"errors"
@@ -31,7 +32,7 @@ func Gin(h Handle) {
 
 	router.LoadHTMLGlob("html/*.html") // шаблоны
 
-	db, err := sql.Open("postgres", "postgres://oreonoreon:12345@localhost:5432/postgres?sslmode=disable")
+	db, err := sql.Open("postgres", repo.DataSourceName) //todo не хорошо что тут используем пакет repo
 	if err != nil {
 		panic(err)
 	}
