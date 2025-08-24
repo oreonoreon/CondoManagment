@@ -11,8 +11,8 @@ services:
       - backend
 
   backend:
-    #build: .
-    image: oreonoreon/backend:latest
+    build: .
+    #image: oreonoreon/backend:latest
     environment:
       - DB_HOST=postgres
       - DB_USER=oreonoreon
