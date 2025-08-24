@@ -2,6 +2,7 @@ package server
 
 import (
 	"awesomeProject/internal/entities"
+	"awesomeProject/internal/repo"
 	"awesomeProject/internal/services"
 	"database/sql"
 	"errors"
@@ -31,7 +32,7 @@ func Gin(h Handle) {
 
 	router.LoadHTMLGlob("html/*.html") // шаблоны
 
-	db, err := sql.Open("postgres", "postgres://oreonoreon:12345@localhost:5432/postgres?sslmode=disable")
+	db, err := sql.Open("postgres", repo.DataSourceName) //todo не хорошо что тут используем пакет repo
 	if err != nil {
 		panic(err)
 	}
@@ -76,9 +77,11 @@ func Gin(h Handle) {
 		api.GET("/report", h.Report)
 		api.POST("/report", h.Report)
 
-		api.POST("/", h.BookingsPost)
+		api.POST("/r", h.BookingsPost)
 
-		api.GET("/", h.ApartmentsGet)
+		api.GET("/r", h.ApartmentsGet)
+
+		api.PATCH("/updateBooking/:id", h.UpdateBooking)
 
 		api.POST("/createBooking", h.CreateBookingPost)
 
@@ -119,6 +122,30 @@ func NewHandle(
 		servicesBnB,
 		servicesUsers,
 	}
+}
+
+func (h *Handle) UpdateBooking(c *gin.Context) {
+	//id, err := strconv.Atoi(c.Param("id"))
+	//if err != nil {
+	//	zap.L().Error("UpdateBooking", zap.Error(err))
+	//	c.String(http.StatusBadRequest, err.Error())
+	//	return
+	//}
+	//
+	//request := new(entities.Booking)
+	//
+	//err := c.BindJSON(request)
+	//if err != nil {
+	//	zap.L().Error("CreateBookingPost", zap.Error(err))
+	//	c.String(http.StatusBadRequest, err.Error())
+	//	return
+	//}
+	//if request == nil {
+	//	erro := errors.New("request contain error")
+	//	zap.L().Error("CreateBookingPost", zap.Error(erro))
+	//	c.String(http.StatusBadRequest, erro.Error())
+	//}
+
 }
 
 func (h *Handle) DeleteBookingByID(c *gin.Context) {

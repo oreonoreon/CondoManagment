@@ -13,6 +13,7 @@ import (
 )
 
 func main() {
+
 	conf := config.InitConfig()
 
 	zapConfig := zap.NewProductionConfig()
