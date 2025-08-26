@@ -87,13 +87,17 @@ func Gin(h Handle) {
 
 		api.DELETE("/deleteBooking/:id", h.DeleteBookingByID)
 
-		//api.GET("/BnB", h.ScrapBnBGet)
 		api.POST("/BnB", h.ScrapBnBPost)
 
 		api.POST("/BnB/locationName", h.ScrapBnBLocationNameUpdate)
 
 		api.POST("/BnB/room", h.ScrapBnbRoomUnderstandableTypePatch)
 	}
+	//router.POST("/BnB", h.ScrapBnBPost)
+	//
+	//router.POST("/BnB/locationName", h.ScrapBnBLocationNameUpdate)
+	//
+	//router.POST("/BnB/room", h.ScrapBnbRoomUnderstandableTypePatch)
 
 	router.Run(":8080") // gin сам управляет тайм-аутами, но можно кастомизировать
 }
