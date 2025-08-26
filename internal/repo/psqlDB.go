@@ -36,7 +36,7 @@ func ConnectionPostgreSQl() (*standard.DB, error) {
 }
 
 func buildDataSourceName() string {
-	link, ok := os.LookupEnv("Postgres.DATABASE_URL")
+	link, ok := os.LookupEnv("DATABASE_URL")
 	if !ok {
 		DB_HOST := os.Getenv("DB_HOST")
 		DB_USER := os.Getenv("DB_USER")
