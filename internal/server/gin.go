@@ -46,7 +46,7 @@ func Gin(h Handle) {
 		Path:     "/",
 		MaxAge:   60 * 60 * 24, // день
 		HttpOnly: true,
-		Secure:   false, // в проде true при https
+		Secure:   true, // в проде true при https
 	})
 	router.Use(sessions.Sessions("sess", store))
 
