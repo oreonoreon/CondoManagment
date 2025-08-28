@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 )
@@ -19,9 +20,14 @@ import (
 func Gin(h Handle) {
 	router := gin.Default()
 
+	allowOrigin, ok := os.LookupEnv("FRONT_URL") //todo вынести все env в подобающее место
+	if !ok {
+		allowOrigin = "*"
+	}
+
 	//---------------------------
 	router.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"*"}, // или "*" для всех
+		AllowOrigins:     []string{allowOrigin}, // или "*" для всех
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept"},
 		ExposeHeaders:    []string{"Content-Length"},
