@@ -56,13 +56,14 @@ func Gin(h Handle) {
 	})
 	router.Use(sessions.Sessions("sess", store))
 
-	router.POST("/createUser", h.CreateUser)
 	router.POST("/login", h.LoginHandler)
 
 	// Защищённые маршруты: сначала сессия, потом authorizer
 	api := router.Group("/calendar")
 	api.Use(SessionAuthMiddleware())
 	{
+		api.POST("/createUser", h.CreateUser)
+
 		api.POST("/logout", h.LogoutHandler)
 
 		api.GET("/sync", h.SynchroniseBookings)
