@@ -96,7 +96,7 @@ func TimeConvert(date string) (time.Time, error) {
 	timeFormat := "02.01.2006"
 	t, err := time.Parse(timeFormat, date)
 	if err != nil {
-		zap.L().Info("TimeConvert", zap.Error(err))
+		zap.L().Debug("TimeConvert", zap.Error(err))
 		//return time.Time{}, err
 	}
 	timeFormat = "2006-01-02"

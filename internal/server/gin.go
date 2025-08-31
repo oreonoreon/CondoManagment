@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 )
@@ -19,9 +20,14 @@ import (
 func Gin(h Handle) {
 	router := gin.Default()
 
+	allowOrigin, ok := os.LookupEnv("FRONT_URL") //todo вынести все env в подобающее место
+	if !ok {
+		allowOrigin = "*"
+	}
+
 	//---------------------------
 	router.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"*"}, // или "*" для всех
+		AllowOrigins:     []string{allowOrigin}, // или "*" для всех
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept"},
 		ExposeHeaders:    []string{"Content-Length"},
@@ -46,17 +52,18 @@ func Gin(h Handle) {
 		Path:     "/",
 		MaxAge:   60 * 60 * 24, // день
 		HttpOnly: true,
-		Secure:   false, // в проде true при https
+		Secure:   true, // в проде true при https
 	})
 	router.Use(sessions.Sessions("sess", store))
 
-	router.POST("/createUser", h.CreateUser)
 	router.POST("/login", h.LoginHandler)
 
 	// Защищённые маршруты: сначала сессия, потом authorizer
 	api := router.Group("/calendar")
 	api.Use(SessionAuthMiddleware())
 	{
+		api.POST("/createUser", h.CreateUser)
+
 		api.POST("/logout", h.LogoutHandler)
 
 		api.GET("/sync", h.SynchroniseBookings)
@@ -87,13 +94,17 @@ func Gin(h Handle) {
 
 		api.DELETE("/deleteBooking/:id", h.DeleteBookingByID)
 
-		//api.GET("/BnB", h.ScrapBnBGet)
 		api.POST("/BnB", h.ScrapBnBPost)
 
 		api.POST("/BnB/locationName", h.ScrapBnBLocationNameUpdate)
 
 		api.POST("/BnB/room", h.ScrapBnbRoomUnderstandableTypePatch)
 	}
+	//router.POST("/BnB", h.ScrapBnBPost)
+	//
+	//router.POST("/BnB/locationName", h.ScrapBnBLocationNameUpdate)
+	//
+	//router.POST("/BnB/room", h.ScrapBnbRoomUnderstandableTypePatch)
 
 	router.Run(":8080") // gin сам управляет тайм-аутами, но можно кастомизировать
 }

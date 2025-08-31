@@ -95,6 +95,10 @@ func (s *Service) CreateReservation1(ctx context.Context, reservation entities.R
 	}
 
 	//запишем новое бронирование в бд
+	if reservation.Days == 0 {
+		res := prepareDaysAndPriceForNight(reservation)
+		reservation = res
+	}
 	r, err := s.storageReservation.Create(ctx, reservation)
 	if err != nil {
 		zap.L().Debug("CreateReservation", zap.Error(err), zap.Any("booking", reservation))
@@ -105,6 +109,31 @@ func (s *Service) CreateReservation1(ctx context.Context, reservation entities.R
 		return nil, erro.ErrEmptyResultFromDB
 	}
 	return r, nil
+}
+
+// todo что бы не считать в коде стоимость ночи и количество дней нужно отдать это на вычеслении бд (раньше это делала бд в вычесляемых столбцах но при удаление контейнера почему всё пропало хотя и потключены volumes)
+func prepareDaysAndPriceForNight(reservation entities.Reservation) entities.Reservation {
+	reservation = countDays(reservation)
+
+	return countPriceForOneNight(reservation)
+}
+
+func countDays(reservation entities.Reservation) entities.Reservation {
+	out := reservation.CheckOut.UTC().Truncate(24 * time.Hour)
+	in := reservation.CheckIn.UTC().Truncate(24 * time.Hour)
+
+	reservation.Days = int(out.Sub(in).Hours() / 24)
+
+	return reservation
+}
+
+func countPriceForOneNight(reservation entities.Reservation) entities.Reservation {
+	if reservation.Price == 0 {
+		reservation.PriceForOneNight = 0
+		return reservation
+	}
+	reservation.PriceForOneNight = int(reservation.Price / reservation.Days)
+	return reservation
 }
 
 func (s *Service) CreateGuest(ctx context.Context, g entities.Guest) (*entities.Guest, error) {
