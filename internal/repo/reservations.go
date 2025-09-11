@@ -216,16 +216,31 @@ func (db *Repository) ReadWithRoomNumber(ctx context.Context, roomNumber string,
 	return reservations, nil
 }
 
-func (db *Repository) Update(ctx context.Context, id int, checkIn, checkOut string) error {
+func (db *Repository) UpdateReservation(ctx context.Context, r entities.Reservation) (*entities.Reservation, error) {
 	reservation := new(entities.Reservation)
-	queryContext := db.PostgreSQL.QueryRowContext(ctx, "UPDATE Reservations SET check_in=$1, check_out=$2 where id=$3 Returning *",
-		checkIn, checkOut, id)
+	query := "UPDATE Reservations SET room_number=$2, guest_id=$3, check_in=$4, check_out=$5, price=$6, cleaning_price=$7,electricity_and_water_payment=$8,adult=$9,children=$10,description=$11, days=$12,price_for_night=$13 where id=$1 Returning *"
+	queryContext := db.PostgreSQL.QueryRowContext(ctx, query,
+		r.Oid, r.RoomNumber, r.GuestID, r.CheckIn, r.CheckOut, r.Price, r.CleaningPrice, r.ElectricityAndWaterPayment, r.Adult, r.Children, r.Description, r.Days, r.PriceForOneNight)
 
-	err := queryContext.Scan(&reservation.Oid, &reservation.RoomNumber, &reservation.GuestID, &reservation.CheckIn, &reservation.CheckOut)
+	err := queryContext.Scan(
+		&reservation.Oid,
+		&reservation.RoomNumber,
+		&reservation.GuestID,
+		&reservation.CheckIn,
+		&reservation.CheckOut,
+		&reservation.Price,
+		&reservation.CleaningPrice,
+		&reservation.ElectricityAndWaterPayment,
+		&reservation.Adult,
+		&reservation.Children,
+		&reservation.Description,
+		&reservation.Days,
+		&reservation.PriceForOneNight,
+	)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return nil
+	return reservation, nil
 }
 
 func (db *Repository) FindBookingByGuestUUID(ctx context.Context, uuid uuid.UUID) ([]entities.Reservation, error) {

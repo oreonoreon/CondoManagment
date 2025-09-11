@@ -18,16 +18,16 @@ type MockStorageReservation struct {
 	mock.Mock
 }
 
-func (m *MockStorageReservation) ReadWithRoomNumber(ctx context.Context, roomNumber string, checkin, checkout time.Time) ([]entities.Reservation, error) {
-	args := m.Called(ctx, roomNumber, checkin, checkout)
-	return args.Get(0).([]entities.Reservation), args.Error(1)
+func (m *MockStorageReservation) UpdateReservation(ctx context.Context, r entities.Reservation) (*entities.Reservation, error) {
+	return nil, nil
 }
-
-// Неиспользуемые методы (можно зашаблонить)
 func (m *MockStorageReservation) Create(ctx context.Context, r entities.Reservation) (*entities.Reservation, error) {
 	return nil, nil
 }
 func (m *MockStorageReservation) ReadALLByRoomNumber(ctx context.Context, roomNumber string) ([]entities.Reservation, error) {
+	return nil, nil
+}
+func (m *MockStorageReservation) ReadWithRoomNumber(ctx context.Context, roomNumber string, checkin, checkout time.Time) ([]entities.Reservation, error) {
 	return nil, nil
 }
 func (m *MockStorageReservation) FindBookingByGuestUUID(ctx context.Context, uuid uuid.UUID) ([]entities.Reservation, error) {
@@ -45,6 +45,9 @@ type MockStorageGuest struct {
 	mock.Mock
 }
 
+func (m *MockStorageGuest) UpdateGuest(ctx context.Context, g entities.Guest) (*entities.Guest, error) {
+	return nil, nil
+}
 func (m *MockStorageGuest) CreateGuest(ctx context.Context, g entities.Guest) (*entities.Guest, error) {
 	return nil, nil
 }

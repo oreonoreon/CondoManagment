@@ -19,6 +19,7 @@ type Service struct {
 }
 
 type StorageReservation interface {
+	UpdateReservation(ctx context.Context, r entities.Reservation) (*entities.Reservation, error)
 	Create(ctx context.Context, r entities.Reservation) (*entities.Reservation, error)
 	ReadALLByRoomNumber(ctx context.Context, roomNumber string) ([]entities.Reservation, error)
 	ReadWithRoomNumber(ctx context.Context, roomNumber string, checkin, checkout time.Time) ([]entities.Reservation, error)
@@ -28,6 +29,7 @@ type StorageReservation interface {
 }
 
 type StorageGuest interface {
+	UpdateGuest(ctx context.Context, g entities.Guest) (*entities.Guest, error)
 	CreateGuest(ctx context.Context, g entities.Guest) (*entities.Guest, error)
 	FindGuestByPhoneNumber(ctx context.Context, phone string) (*entities.Guest, error)
 	ReadGuest(ctx context.Context, guestID uuid.UUID) (*entities.Guest, error)
@@ -38,6 +40,61 @@ func NewService(storage StorageReservation, storageGuest StorageGuest) *Service 
 		storageReservation: storage,
 		storageGuest:       storageGuest,
 	}
+}
+
+func (s *Service) UpdateBooking(ctx context.Context, booking entities.Booking) (*entities.Booking, error) {
+	r, err := s.storageReservation.GetReservationByID(ctx, booking.Reservation.Oid)
+	if err != nil {
+		zap.L().Error("UpdateBooking", zap.Error(err))
+		return nil, err
+	}
+	if r == nil {
+		zap.L().Error("UpdateBooking", zap.Error(erro.ErrEmptyResultFromReservation))
+		return nil, erro.ErrEmptyResultFromReservation
+	}
+
+	g, err := s.storageGuest.ReadGuest(ctx, r.GuestID)
+	if err != nil {
+		zap.L().Error("UpdateBooking", zap.Error(err))
+		return nil, err
+	}
+	if g == nil {
+		zap.L().Error("UpdateBooking", zap.Error(erro.ErrReservationHasGuestUUIDbutGuestNotFound))
+		return nil, erro.ErrReservationHasGuestUUIDbutGuestNotFound
+	}
+
+	updateGuest := new(entities.Guest)
+	if booking.Guest.Phone != g.Phone {
+		updateGuest, err = s.CreateGuest(ctx, booking.Guest)
+		if err != nil {
+			zap.L().Error("UpdateBooking", zap.Error(err))
+			return nil, err
+		}
+	} else {
+		booking.Guest.GuestID = g.GuestID
+		updateGuest, err = s.storageGuest.UpdateGuest(ctx, booking.Guest)
+		if err != nil {
+			zap.L().Error("UpdateBooking", zap.Error(err))
+			return nil, err
+		}
+	}
+
+	booking.Reservation.GuestID = updateGuest.GuestID
+
+	booking.Reservation = prepareDaysAndPriceForNight(booking.Reservation)
+
+	updateReservation, err := s.storageReservation.UpdateReservation(ctx, booking.Reservation)
+	if err != nil {
+		zap.L().Error("UpdateBooking", zap.Error(err))
+		return nil, err
+	}
+
+	b := entities.Booking{
+		Guest:       *updateGuest,
+		Reservation: *updateReservation,
+	}
+
+	return &b, nil
 }
 
 func (s *Service) DeleteReservation(ctx context.Context, id int) (*entities.Reservation, error) {
@@ -64,7 +121,7 @@ func (s *Service) CreateBooking(ctx context.Context, booking entities.Booking) (
 
 	booking.Reservation.GuestID = guest.GuestID
 
-	reservation, err := s.CreateReservation1(ctx, booking.Reservation)
+	reservation, err := s.CreateReservation(ctx, booking.Reservation)
 	if err != nil {
 		return nil, err
 	}
@@ -73,26 +130,26 @@ func (s *Service) CreateBooking(ctx context.Context, booking entities.Booking) (
 	return &b, nil
 }
 
-func (s *Service) CreateReservation1(ctx context.Context, reservation entities.Reservation) (*entities.Reservation, error) {
+func (s *Service) CreateReservation(ctx context.Context, reservation entities.Reservation) (*entities.Reservation, error) {
 	if reservation.GuestID == uuid.Nil {
 		return nil, errors.New("uuid is nil")
 	}
-	//чекнем пересечение по датам на эту комнату
-	values, err := s.storageReservation.ReadWithRoomNumber(ctx, reservation.RoomNumber, reservation.CheckIn, reservation.CheckOut)
-	if err != nil {
-		return nil, err
-	}
-	if len(values) > 0 {
-		if len(values) == 1 {
-			if values[0].CheckIn.UTC() == reservation.CheckIn &&
-				values[0].CheckOut.UTC() == reservation.CheckOut &&
-				values[0].Price == reservation.Price &&
-				values[0].RoomNumber == reservation.RoomNumber {
-				return nil, fmt.Errorf("%w\nзаписываемое значение: %v;\nзначение из БД: %v;", erro.ErrFullyMatchOtherBooking, reservation, values[0])
-			}
-		}
-		return nil, errors.New(fmt.Sprintf("Букинг: %v ; пересекается со следуюшим бронированиями: %v ;", reservation, values))
-	}
+	////чекнем пересечение по датам на эту комнату
+	//values, err := s.storageReservation.ReadWithRoomNumber(ctx, reservation.RoomNumber, reservation.CheckIn, reservation.CheckOut)
+	//if err != nil {
+	//	return nil, err
+	//}
+	//if len(values) > 0 {
+	//	if len(values) == 1 {
+	//		if values[0].CheckIn.UTC() == reservation.CheckIn &&
+	//			values[0].CheckOut.UTC() == reservation.CheckOut &&
+	//			values[0].Price == reservation.Price &&
+	//			values[0].RoomNumber == reservation.RoomNumber {
+	//			return nil, fmt.Errorf("%w\nзаписываемое значение: %v;\nзначение из БД: %v;", erro.ErrFullyMatchOtherBooking, reservation, values[0])
+	//		}
+	//	}
+	//	return nil, errors.New(fmt.Sprintf("Букинг: %v ; пересекается со следуюшим бронированиями: %v ;", reservation, values))
+	//}
 
 	//запишем новое бронирование в бд
 	if reservation.Days == 0 {
@@ -158,7 +215,7 @@ func (s *Service) CreateGuest(ctx context.Context, g entities.Guest) (*entities.
 	return guest, nil
 }
 
-func (s *Service) CreateReservation(ctx context.Context, booking entities.Booking) error {
+func (s *Service) CreateReservation1(ctx context.Context, booking entities.Booking) error {
 	guest, err := s.storageGuest.FindGuestByPhoneNumber(ctx, booking.Phone)
 	if err != nil {
 		return err

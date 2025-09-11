@@ -61,10 +61,11 @@ func (b *BookingInfo) Validate() error {
 	if err != nil {
 		return err
 	}
-	err = b.HaveName()
+	err = b.HavePhone()
 	if err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -76,7 +77,7 @@ func (b *BookingInfo) HaveName() error {
 }
 
 func (b *BookingInfo) HavePhone() error {
-	if b.Phone == "+" || b.Phone == "@" {
+	if b.Phone == "+" || b.Phone == "@" || b.Phone == "" || b.Phone == " " {
 		return erro.ErrBookingExcelModelHaveNotPhone
 	}
 	return nil
@@ -148,6 +149,10 @@ func (b BookingInfo) DbModelConvert(uuid uuid.UUID) (*entities.Reservation, erro
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	if !checkOut.After(checkIn) {
+		return nil, erro.ErrBookingExcelModelDbCovertCheckInAfterCheckOut
 	}
 
 	days := int(checkOut.Sub(checkIn).Hours() / 24)

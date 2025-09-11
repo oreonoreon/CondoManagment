@@ -88,7 +88,7 @@ func Gin(h Handle) {
 
 		api.GET("/r", h.ApartmentsGet)
 
-		api.PATCH("/updateBooking/:id", h.UpdateBooking)
+		api.PATCH("/updateBooking", h.UpdateBooking)
 
 		api.POST("/createBooking", h.CreateBookingPost)
 
@@ -136,27 +136,21 @@ func NewHandle(
 }
 
 func (h *Handle) UpdateBooking(c *gin.Context) {
-	//id, err := strconv.Atoi(c.Param("id"))
-	//if err != nil {
-	//	zap.L().Error("UpdateBooking", zap.Error(err))
-	//	c.String(http.StatusBadRequest, err.Error())
-	//	return
-	//}
-	//
-	//request := new(entities.Booking)
-	//
-	//err := c.BindJSON(request)
-	//if err != nil {
-	//	zap.L().Error("CreateBookingPost", zap.Error(err))
-	//	c.String(http.StatusBadRequest, err.Error())
-	//	return
-	//}
-	//if request == nil {
-	//	erro := errors.New("request contain error")
-	//	zap.L().Error("CreateBookingPost", zap.Error(erro))
-	//	c.String(http.StatusBadRequest, erro.Error())
-	//}
+	request := new(entities.Booking)
 
+	err := c.BindJSON(request)
+	if err != nil {
+		zap.L().Error("UpdateBooking", zap.Error(err))
+		c.String(http.StatusBadRequest, err.Error())
+		return
+	}
+	booking, err := h.Service.UpdateBooking(c.Request.Context(), *request)
+	if err != nil {
+		c.String(http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	c.IndentedJSON(http.StatusOK, booking)
 }
 
 func (h *Handle) DeleteBookingByID(c *gin.Context) {
