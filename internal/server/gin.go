@@ -28,7 +28,7 @@ func Gin(h Handle) {
 	//---------------------------
 	router.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{allowOrigin}, // или "*" для всех
-		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept"},
 		ExposeHeaders:    []string{"Content-Length"},
 		AllowCredentials: true,
