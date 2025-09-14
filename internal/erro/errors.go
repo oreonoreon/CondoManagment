@@ -23,7 +23,7 @@ func (e *Err) Message() string {
 
 var (
 	ErrFullyMatchOtherBooking                        = &Err{1000, "Букинг полностью совпадает с:"}
-	ErrMatchWithOtherBooking                         = &Err{1001, "Букинг пересекается со следуюшим бронированиями:"}
+	ErrMatchWithOtherBooking                         = &Err{1001, "Букинг пересекается с другими бронированиями"}
 	ErrReservationHasGuestUUIDbutGuestNotFound       = &Err{1002, "Reservations have the guest uuid but in Guests table guest was not found"}
 	ErrGuestAlreadyExist                             = &Err{1003, "Guest already exist"}
 	ErrBookingExcelModelHaveNotName                  = &Err{1004, "While parsing booking excel model the Name of Guest was not found"}
