@@ -352,8 +352,20 @@ func (s *Service) CreateReport(ctx context.Context, roomNumber string, startPeri
 	return path, nil
 }
 
+func (s *Service) GetBookingALLForApartmentALL(ctx context.Context, roomNumbers []string) ([]entities.Booking, error) {
+	allBokings := make([]entities.Booking, 0, 500)
+	for _, room := range roomNumbers {
+		bookings, err := s.GetBookingALLForApartment(ctx, room)
+		if err != nil {
+			return nil, err
+		}
+		allBokings = append(allBokings, bookings...)
+	}
+	return allBokings, nil
+}
+
 func (s *Service) GetBookingALLForApartment(ctx context.Context, roomNumber string) ([]entities.Booking, error) {
-	bookings := make([]entities.Booking, 0, 5)
+	bookings := make([]entities.Booking, 0, 50)
 	reservation, err := s.GetReservationALLForApartment(ctx, roomNumber)
 	if err != nil {
 		return nil, err

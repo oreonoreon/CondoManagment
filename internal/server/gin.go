@@ -85,6 +85,7 @@ func Gin(h Handle) {
 		api.POST("/report", h.Report)
 
 		api.POST("/r", h.BookingsPost)
+		api.POST("/rall", h.AllBookingsPost)
 
 		api.GET("/r", h.ApartmentsGet)
 
@@ -218,6 +219,29 @@ func (h *Handle) BookingsPost(c *gin.Context) {
 	}
 
 	bookings, err := h.Service.GetBookingALLForApartment(c.Request.Context(), request.RoomNumber)
+	if err != nil {
+		c.String(http.StatusInternalServerError, err.Error())
+		return
+	}
+	c.IndentedJSON(http.StatusOK, gin.H{
+		"bookings": bookings,
+	})
+}
+
+type AllBookingsGetRequest struct {
+	RoomNumbers []string `json:"room_numbers"`
+}
+
+func (h *Handle) AllBookingsPost(c *gin.Context) {
+	//request := make([]string, 0, 10)
+	request := new(AllBookingsGetRequest)
+	err := c.BindJSON(request)
+	if err != nil {
+		c.String(http.StatusBadRequest, err.Error())
+		return
+	}
+	//fmt.Println(request)
+	bookings, err := h.Service.GetBookingALLForApartmentALL(c.Request.Context(), request.RoomNumbers)
 	if err != nil {
 		c.String(http.StatusInternalServerError, err.Error())
 		return
