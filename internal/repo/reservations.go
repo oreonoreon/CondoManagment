@@ -67,6 +67,7 @@ func (db *Repository) Delete(ctx context.Context, id int) (*entities.Reservation
 }
 
 func (db *Repository) Create(ctx context.Context, r entities.Reservation) (*entities.Reservation, error) {
+	runner := getRunner(ctx, db.PostgreSQL) // todo такое использование контекста надо переделать или ввести повсеместно
 	reservation := new(entities.Reservation)
 
 	query := "INSERT INTO Reservations (" +
@@ -85,7 +86,7 @@ func (db *Repository) Create(ctx context.Context, r entities.Reservation) (*enti
 		") " +
 		"VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) Returning *"
 
-	queryContext := db.PostgreSQL.QueryRowContext(
+	queryContext := runner.QueryRowContext(
 		ctx,
 		query,
 		r.RoomNumber,
@@ -218,40 +219,10 @@ func (db *Repository) ReadWithRoomNumber(ctx context.Context, roomNumber string,
 	return reservations, nil
 }
 
-//func (db *Repository) UpdateReservation(ctx context.Context, r entities.Reservation) (*entities.Reservation, error) {
-//	reservation := new(entities.Reservation)
-//	query := "UPDATE Reservations SET room_number=$2, guest_id=$3, check_in=$4, check_out=$5, price=$6, cleaning_price=$7,electricity_and_water_payment=$8,adult=$9,children=$10,description=$11, days=$12,price_for_night=$13 where id=$1 Returning *"
-//	queryContext := db.PostgreSQL.QueryRowContext(ctx, query,
-//		r.Oid, r.RoomNumber, r.GuestID, r.CheckIn, r.CheckOut, r.Price, r.CleaningPrice, r.ElectricityAndWaterPayment, r.Adult, r.Children, r.Description, r.Days, r.PriceForOneNight)
-//
-//	err := queryContext.Scan(
-//		&reservation.Oid,
-//		&reservation.RoomNumber,
-//		&reservation.GuestID,
-//		&reservation.CheckIn,
-//		&reservation.CheckOut,
-//		&reservation.Price,
-//		&reservation.CleaningPrice,
-//		&reservation.ElectricityAndWaterPayment,
-//		&reservation.Adult,
-//		&reservation.Children,
-//		&reservation.Description,
-//		&reservation.Days,
-//		&reservation.PriceForOneNight,
-//	)
-//	if db.PostgreSQL.ErrGetCode(err) == "23P01" {
-//		return nil, erro.ErrMatchWithOtherBooking
-//	}
-//	if err != nil {
-//		return nil, err
-//	}
-//	return reservation, nil
-//}
-
 func (db *Repository) UpdateReservation(ctx context.Context, r entities.Reservation) (*entities.Reservation, error) {
 	tx := From(ctx)
 	if tx == nil {
-		return nil, errors.New("context doesn't contain transaction")
+		return nil, errors.New("context doesn't contain transaction") // todo решить делать так все запросы или через getRunner
 	}
 
 	reservation := new(entities.Reservation)

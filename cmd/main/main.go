@@ -58,6 +58,8 @@ func main() {
 	serviceReservation := services.NewService(postgre, postgre)
 	serviceSettings := services.NewServiceSettings(postgre)
 
+	serviceTransaction := services.NewTransactionalService(serviceReservation, postgre)
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -74,7 +76,15 @@ func main() {
 	servicesUsers := services.NewServiceUsers(postgre)
 
 	//handlers
-	handler := server.NewHandle(serviceReservation, serviceSettings, serviceExcel, serviceApartment, serviceBnB, servicesUsers)
+	handler := server.NewHandle(
+		serviceReservation,
+		serviceTransaction,
+		serviceSettings,
+		serviceExcel,
+		serviceApartment,
+		serviceBnB,
+		servicesUsers,
+	)
 
 	//server
 	server.Gin(handler)

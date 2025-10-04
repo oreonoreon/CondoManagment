@@ -62,19 +62,6 @@ func (db *Repository) UpdateGuest(ctx context.Context, g entities.Guest) (*entit
 //	return guest, nil
 //}
 
-type queryer interface {
-	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
-	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
-}
-
-func getRunner(ctx context.Context, db *sql.DB) queryer {
-	if tx := From(ctx); tx != nil {
-		return tx
-	}
-	zap.L().Debug("getRunner", zap.Error(errors.New("context doesn't contain transaction")))
-	return db
-}
-
 func (db *Repository) CreateGuest(ctx context.Context, g entities.Guest) (*entities.Guest, error) {
 	runner := getRunner(ctx, db.PostgreSQL) // todo такое использование контекста надо переделать или ввести повсеместно
 

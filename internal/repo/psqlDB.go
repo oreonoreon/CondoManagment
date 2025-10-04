@@ -3,8 +3,10 @@ package repo
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	_ "github.com/lib/pq"
+	"go.uber.org/zap"
 	"os"
 )
 
@@ -93,4 +95,34 @@ func (db *Repository) BeginTx(ctx context.Context, opts *sql.TxOptions) (context
 		return ctx, nil, err
 	}
 	return WithTx(ctx, tx), tx, nil
+}
+
+func (db *Repository) WithTransaction(ctx context.Context, fn func(context.Context) error) error {
+	ctx, tx, err := db.BeginTx(ctx, &sql.TxOptions{
+		Isolation: sql.LevelReadCommitted,
+		ReadOnly:  false,
+	})
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if err := fn(ctx); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+type queryer interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
+func getRunner(ctx context.Context, db *sql.DB) queryer {
+	if tx := From(ctx); tx != nil {
+		return tx
+	}
+	zap.L().Debug("getRunner", zap.Error(errors.New("context doesn't contain transaction")))
+	return db
 }
