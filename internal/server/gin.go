@@ -28,7 +28,7 @@ func Gin(h Handle) {
 	//---------------------------
 	router.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{allowOrigin}, // или "*" для всех
-		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept"},
 		ExposeHeaders:    []string{"Content-Length"},
 		AllowCredentials: true,
@@ -85,10 +85,11 @@ func Gin(h Handle) {
 		api.POST("/report", h.Report)
 
 		api.POST("/r", h.BookingsPost)
+		api.POST("/rall", h.AllBookingsPost)
 
 		api.GET("/r", h.ApartmentsGet)
 
-		api.PATCH("/updateBooking/:id", h.UpdateBooking)
+		api.PATCH("/updateBooking", h.UpdateBooking)
 
 		api.POST("/createBooking", h.CreateBookingPost)
 
@@ -111,6 +112,7 @@ func Gin(h Handle) {
 
 type Handle struct {
 	*services.Service
+	*services.TransactionalService
 	*services.ServiceSettings
 	*services.ServiceExcel
 	*services.ServiceApartment
@@ -120,6 +122,7 @@ type Handle struct {
 
 func NewHandle(
 	serviceReservation *services.Service,
+	servicesInterface *services.TransactionalService,
 	serviceSettings *services.ServiceSettings,
 	serviceExcel *services.ServiceExcel,
 	serviceApartment *services.ServiceApartment,
@@ -127,6 +130,7 @@ func NewHandle(
 	servicesUsers *services.ServiceUsers) Handle {
 	return Handle{
 		serviceReservation,
+		servicesInterface,
 		serviceSettings,
 		serviceExcel,
 		serviceApartment,
@@ -136,27 +140,21 @@ func NewHandle(
 }
 
 func (h *Handle) UpdateBooking(c *gin.Context) {
-	//id, err := strconv.Atoi(c.Param("id"))
-	//if err != nil {
-	//	zap.L().Error("UpdateBooking", zap.Error(err))
-	//	c.String(http.StatusBadRequest, err.Error())
-	//	return
-	//}
-	//
-	//request := new(entities.Booking)
-	//
-	//err := c.BindJSON(request)
-	//if err != nil {
-	//	zap.L().Error("CreateBookingPost", zap.Error(err))
-	//	c.String(http.StatusBadRequest, err.Error())
-	//	return
-	//}
-	//if request == nil {
-	//	erro := errors.New("request contain error")
-	//	zap.L().Error("CreateBookingPost", zap.Error(erro))
-	//	c.String(http.StatusBadRequest, erro.Error())
-	//}
+	request := new(entities.Booking)
 
+	err := c.BindJSON(request)
+	if err != nil {
+		zap.L().Error("UpdateBooking", zap.Error(err))
+		c.String(http.StatusBadRequest, err.Error())
+		return
+	}
+	booking, err := h.TransactionalService.UpdateBooking(c.Request.Context(), *request)
+	if err != nil {
+		c.String(http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	c.IndentedJSON(http.StatusOK, booking)
 }
 
 func (h *Handle) DeleteBookingByID(c *gin.Context) {
@@ -190,7 +188,7 @@ func (h *Handle) CreateBookingPost(c *gin.Context) {
 		c.String(http.StatusBadRequest, erro.Error())
 	}
 
-	booking, err := h.Service.CreateBooking(c.Request.Context(), *request)
+	booking, err := h.TransactionalService.CreateBooking(c.Request.Context(), *request)
 	if err != nil {
 		c.String(http.StatusInternalServerError, err.Error())
 		return
@@ -224,6 +222,29 @@ func (h *Handle) BookingsPost(c *gin.Context) {
 	}
 
 	bookings, err := h.Service.GetBookingALLForApartment(c.Request.Context(), request.RoomNumber)
+	if err != nil {
+		c.String(http.StatusInternalServerError, err.Error())
+		return
+	}
+	c.IndentedJSON(http.StatusOK, gin.H{
+		"bookings": bookings,
+	})
+}
+
+type AllBookingsGetRequest struct {
+	RoomNumbers []string `json:"room_numbers"`
+}
+
+func (h *Handle) AllBookingsPost(c *gin.Context) {
+	//request := make([]string, 0, 10)
+	request := new(AllBookingsGetRequest)
+	err := c.BindJSON(request)
+	if err != nil {
+		c.String(http.StatusBadRequest, err.Error())
+		return
+	}
+
+	bookings, err := h.Service.GetBookingALLForApartmentALL(c.Request.Context(), request.RoomNumbers)
 	if err != nil {
 		c.String(http.StatusInternalServerError, err.Error())
 		return

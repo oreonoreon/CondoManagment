@@ -23,13 +23,13 @@ func (h *Handle) CreateUser(c *gin.Context) {
 
 	user, err := h.ServiceUsers.PrepareToCreateUser(u.Username, u.Password, u.Phone)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, nil) //todo сделать что нибудь с ошибкой а не передавать nil
+		c.JSON(http.StatusInternalServerError, err) //todo сделать что нибудь с ошибкой а не передавать nil
 		return
 	}
 
 	createdUser, err := h.ServiceUsers.CreateUser(c.Request.Context(), *user)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, nil) //todo сделать что нибудь с ошибкой а не передавать nil
+		c.JSON(http.StatusInternalServerError, err) //todo сделать что нибудь с ошибкой а не передавать nil
 		return
 	}
 

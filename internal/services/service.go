@@ -19,6 +19,8 @@ type Service struct {
 }
 
 type StorageReservation interface {
+	//BeginTx(ctx context.Context, opts *sql.TxOptions) (context.Context, *sql.Tx, error)
+	UpdateReservation(ctx context.Context, r entities.Reservation) (*entities.Reservation, error)
 	Create(ctx context.Context, r entities.Reservation) (*entities.Reservation, error)
 	ReadALLByRoomNumber(ctx context.Context, roomNumber string) ([]entities.Reservation, error)
 	ReadWithRoomNumber(ctx context.Context, roomNumber string, checkin, checkout time.Time) ([]entities.Reservation, error)
@@ -28,6 +30,7 @@ type StorageReservation interface {
 }
 
 type StorageGuest interface {
+	UpdateGuest(ctx context.Context, g entities.Guest) (*entities.Guest, error)
 	CreateGuest(ctx context.Context, g entities.Guest) (*entities.Guest, error)
 	FindGuestByPhoneNumber(ctx context.Context, phone string) (*entities.Guest, error)
 	ReadGuest(ctx context.Context, guestID uuid.UUID) (*entities.Guest, error)
@@ -38,6 +41,132 @@ func NewService(storage StorageReservation, storageGuest StorageGuest) *Service 
 		storageReservation: storage,
 		storageGuest:       storageGuest,
 	}
+}
+
+//func (s *Service) UpdateBooking(ctx context.Context, booking entities.Booking) (*entities.Booking, error) {
+//	// 1) Стартуем транзакцию и привязываем её к контексту
+//	ctx, tx, err := s.storageReservation.BeginTx(ctx, &sql.TxOptions{
+//		Isolation: sql.LevelReadCommitted, // достаточно для этого сценария
+//		ReadOnly:  false,
+//	})
+//	if err != nil {
+//		return nil, err
+//	}
+//	// Всегда откатываем, если не было коммита (дефер безопасен)
+//	defer tx.Rollback()
+//
+//	// 2) Все дальнейшие вызовы стораджей идут с тем же ctx (внутри они увидят tx)
+//	r, err := s.storageReservation.GetReservationByID(ctx, booking.Reservation.Oid)
+//	if err != nil {
+//		zap.L().Error("UpdateBooking", zap.Error(err))
+//		return nil, err
+//	}
+//	if r == nil {
+//		zap.L().Error("UpdateBooking", zap.Error(erro.ErrEmptyResultFromReservation))
+//		return nil, erro.ErrEmptyResultFromReservation
+//	}
+//
+//	g, err := s.storageGuest.ReadGuest(ctx, r.GuestID)
+//	if err != nil {
+//		zap.L().Error("UpdateBooking", zap.Error(err))
+//		return nil, err
+//	}
+//	if g == nil {
+//		zap.L().Error("UpdateBooking", zap.Error(erro.ErrReservationHasGuestUUIDbutGuestNotFound))
+//		return nil, erro.ErrReservationHasGuestUUIDbutGuestNotFound
+//	}
+//
+//	var updatedGuest *entities.Guest
+//	if booking.Guest.Phone != g.Phone {
+//		updatedGuest, err = s.CreateGuest(ctx, booking.Guest)
+//		if err != nil {
+//			zap.L().Error("UpdateBooking", zap.Error(err))
+//			return nil, err // транзакция откатится по defer
+//		}
+//	} else {
+//		booking.Guest.GuestID = g.GuestID
+//		updatedGuest, err = s.storageGuest.UpdateGuest(ctx, booking.Guest)
+//		if err != nil {
+//			zap.L().Error("UpdateBooking", zap.Error(err))
+//			return nil, err // транзакция откатится
+//		}
+//	}
+//
+//	booking.Reservation.GuestID = updatedGuest.GuestID
+//	booking.Reservation = prepareDaysAndPriceForNight(booking.Reservation)
+//
+//	updateReservation, err := s.storageReservation.UpdateReservation(ctx, booking.Reservation)
+//	if err != nil {
+//		// здесь может прилететь 23P01 (пересечение дат), и мы просто вернём ошибку — defer сделает Rollback
+//		zap.L().Error("UpdateBooking", zap.Error(err))
+//		return nil, err
+//	}
+//
+//	b := entities.Booking{
+//		Guest:       *updatedGuest,
+//		Reservation: *updateReservation,
+//	}
+//
+//	// 3) Фиксируем транзакцию
+//	if err := tx.Commit(); err != nil {
+//		return nil, err
+//	}
+//	return &b, nil
+//}
+
+func (s *Service) UpdateBooking(ctx context.Context, booking entities.Booking) (*entities.Booking, error) {
+	r, err := s.storageReservation.GetReservationByID(ctx, booking.Reservation.Oid)
+	if err != nil {
+		zap.L().Error("UpdateBooking", zap.Error(err))
+		return nil, err
+	}
+	if r == nil {
+		zap.L().Error("UpdateBooking", zap.Error(erro.ErrEmptyResultFromReservation))
+		return nil, erro.ErrEmptyResultFromReservation
+	}
+
+	g, err := s.storageGuest.ReadGuest(ctx, r.GuestID)
+	if err != nil {
+		zap.L().Error("UpdateBooking", zap.Error(err))
+		return nil, err
+	}
+	if g == nil {
+		zap.L().Error("UpdateBooking", zap.Error(erro.ErrReservationHasGuestUUIDbutGuestNotFound))
+		return nil, erro.ErrReservationHasGuestUUIDbutGuestNotFound
+	}
+
+	updateGuest := new(entities.Guest)
+	if booking.Guest.Phone != g.Phone {
+		updateGuest, err = s.CreateGuest(ctx, booking.Guest)
+		if err != nil {
+			zap.L().Error("UpdateBooking", zap.Error(err))
+			return nil, err
+		}
+	} else {
+		booking.Guest.GuestID = g.GuestID
+		updateGuest, err = s.storageGuest.UpdateGuest(ctx, booking.Guest)
+		if err != nil {
+			zap.L().Error("UpdateBooking", zap.Error(err))
+			return nil, err
+		}
+	}
+
+	booking.Reservation.GuestID = updateGuest.GuestID
+
+	booking.Reservation = prepareDaysAndPriceForNight(booking.Reservation)
+
+	updateReservation, err := s.storageReservation.UpdateReservation(ctx, booking.Reservation)
+	if err != nil {
+		zap.L().Error("UpdateBooking", zap.Error(err))
+		return nil, err
+	}
+
+	b := entities.Booking{
+		Guest:       *updateGuest,
+		Reservation: *updateReservation,
+	}
+
+	return &b, nil
 }
 
 func (s *Service) DeleteReservation(ctx context.Context, id int) (*entities.Reservation, error) {
@@ -64,7 +193,7 @@ func (s *Service) CreateBooking(ctx context.Context, booking entities.Booking) (
 
 	booking.Reservation.GuestID = guest.GuestID
 
-	reservation, err := s.CreateReservation1(ctx, booking.Reservation)
+	reservation, err := s.CreateReservation(ctx, booking.Reservation)
 	if err != nil {
 		return nil, err
 	}
@@ -73,25 +202,9 @@ func (s *Service) CreateBooking(ctx context.Context, booking entities.Booking) (
 	return &b, nil
 }
 
-func (s *Service) CreateReservation1(ctx context.Context, reservation entities.Reservation) (*entities.Reservation, error) {
+func (s *Service) CreateReservation(ctx context.Context, reservation entities.Reservation) (*entities.Reservation, error) {
 	if reservation.GuestID == uuid.Nil {
 		return nil, errors.New("uuid is nil")
-	}
-	//чекнем пересечение по датам на эту комнату
-	values, err := s.storageReservation.ReadWithRoomNumber(ctx, reservation.RoomNumber, reservation.CheckIn, reservation.CheckOut)
-	if err != nil {
-		return nil, err
-	}
-	if len(values) > 0 {
-		if len(values) == 1 {
-			if values[0].CheckIn.UTC() == reservation.CheckIn &&
-				values[0].CheckOut.UTC() == reservation.CheckOut &&
-				values[0].Price == reservation.Price &&
-				values[0].RoomNumber == reservation.RoomNumber {
-				return nil, fmt.Errorf("%w\nзаписываемое значение: %v;\nзначение из БД: %v;", erro.ErrFullyMatchOtherBooking, reservation, values[0])
-			}
-		}
-		return nil, errors.New(fmt.Sprintf("Букинг: %v ; пересекается со следуюшим бронированиями: %v ;", reservation, values))
 	}
 
 	//запишем новое бронирование в бд
@@ -158,7 +271,7 @@ func (s *Service) CreateGuest(ctx context.Context, g entities.Guest) (*entities.
 	return guest, nil
 }
 
-func (s *Service) CreateReservation(ctx context.Context, booking entities.Booking) error {
+func (s *Service) CreateReservation1(ctx context.Context, booking entities.Booking) error {
 	guest, err := s.storageGuest.FindGuestByPhoneNumber(ctx, booking.Phone)
 	if err != nil {
 		return err
@@ -222,8 +335,20 @@ func (s *Service) CreateReport(ctx context.Context, roomNumber string, startPeri
 	return path, nil
 }
 
+func (s *Service) GetBookingALLForApartmentALL(ctx context.Context, roomNumbers []string) ([]entities.Booking, error) {
+	allBokings := make([]entities.Booking, 0, 500)
+	for _, room := range roomNumbers {
+		bookings, err := s.GetBookingALLForApartment(ctx, room)
+		if err != nil {
+			return nil, err
+		}
+		allBokings = append(allBokings, bookings...)
+	}
+	return allBokings, nil
+}
+
 func (s *Service) GetBookingALLForApartment(ctx context.Context, roomNumber string) ([]entities.Booking, error) {
-	bookings := make([]entities.Booking, 0, 5)
+	bookings := make([]entities.Booking, 0, 50)
 	reservation, err := s.GetReservationALLForApartment(ctx, roomNumber)
 	if err != nil {
 		return nil, err

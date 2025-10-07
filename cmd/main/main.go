@@ -6,7 +6,7 @@ import (
 	"awesomeProject/internal/server"
 	"awesomeProject/internal/services"
 	"context"
-	"github.com/gopsql/standard"
+	"database/sql"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"time"
@@ -37,7 +37,14 @@ func main() {
 		panic(err)
 	}
 
-	defer func(db *standard.DB) {
+	//defer func(db *standard.DB) {
+	//	err := db.Close()
+	//	if err != nil {
+	//		zap.L().Error("db.Close()", zap.Error(err))
+	//	}
+	//}(db)
+
+	defer func(db *sql.DB) {
 		err := db.Close()
 		if err != nil {
 			zap.L().Error("db.Close()", zap.Error(err))
@@ -50,6 +57,8 @@ func main() {
 	//services
 	serviceReservation := services.NewService(postgre, postgre)
 	serviceSettings := services.NewServiceSettings(postgre)
+
+	serviceTransaction := services.NewTransactionalService(serviceReservation, postgre)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -67,7 +76,15 @@ func main() {
 	servicesUsers := services.NewServiceUsers(postgre)
 
 	//handlers
-	handler := server.NewHandle(serviceReservation, serviceSettings, serviceExcel, serviceApartment, serviceBnB, servicesUsers)
+	handler := server.NewHandle(
+		serviceReservation,
+		serviceTransaction,
+		serviceSettings,
+		serviceExcel,
+		serviceApartment,
+		serviceBnB,
+		servicesUsers,
+	)
 
 	//server
 	server.Gin(handler)

@@ -2,10 +2,12 @@ package repo
 
 import (
 	"awesomeProject/internal/entities"
+	"awesomeProject/internal/erro"
 	"context"
 	"database/sql"
 	"errors"
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"time"
 )
 
@@ -65,6 +67,7 @@ func (db *Repository) Delete(ctx context.Context, id int) (*entities.Reservation
 }
 
 func (db *Repository) Create(ctx context.Context, r entities.Reservation) (*entities.Reservation, error) {
+	runner := getRunner(ctx, db.PostgreSQL) // todo такое использование контекста надо переделать или ввести повсеместно
 	reservation := new(entities.Reservation)
 
 	query := "INSERT INTO Reservations (" +
@@ -83,7 +86,7 @@ func (db *Repository) Create(ctx context.Context, r entities.Reservation) (*enti
 		") " +
 		"VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) Returning *"
 
-	queryContext := db.PostgreSQL.QueryRowContext(
+	queryContext := runner.QueryRowContext(
 		ctx,
 		query,
 		r.RoomNumber,
@@ -216,18 +219,50 @@ func (db *Repository) ReadWithRoomNumber(ctx context.Context, roomNumber string,
 	return reservations, nil
 }
 
-func (db *Repository) Update(ctx context.Context, id int, checkIn, checkOut string) error {
-	reservation := new(entities.Reservation)
-	queryContext := db.PostgreSQL.QueryRowContext(ctx, "UPDATE Reservations SET check_in=$1, check_out=$2 where id=$3 Returning *",
-		checkIn, checkOut, id)
-
-	err := queryContext.Scan(&reservation.Oid, &reservation.RoomNumber, &reservation.GuestID, &reservation.CheckIn, &reservation.CheckOut)
-	if err != nil {
-		return err
+func (db *Repository) UpdateReservation(ctx context.Context, r entities.Reservation) (*entities.Reservation, error) {
+	tx := From(ctx)
+	if tx == nil {
+		return nil, errors.New("context doesn't contain transaction") // todo решить делать так все запросы или через getRunner
 	}
-	return nil
+
+	reservation := new(entities.Reservation)
+	query := "UPDATE Reservations SET room_number=$2, guest_id=$3, check_in=$4, check_out=$5, price=$6, cleaning_price=$7,electricity_and_water_payment=$8,adult=$9,children=$10,description=$11, days=$12,price_for_night=$13 where id=$1 Returning *"
+	queryContext := tx.QueryRowContext(ctx, query,
+		r.Oid, r.RoomNumber, r.GuestID, r.CheckIn, r.CheckOut, r.Price, r.CleaningPrice, r.ElectricityAndWaterPayment, r.Adult, r.Children, r.Description, r.Days, r.PriceForOneNight)
+
+	err := queryContext.Scan(
+		&reservation.Oid,
+		&reservation.RoomNumber,
+		&reservation.GuestID,
+		&reservation.CheckIn,
+		&reservation.CheckOut,
+		&reservation.Price,
+		&reservation.CleaningPrice,
+		&reservation.ElectricityAndWaterPayment,
+		&reservation.Adult,
+		&reservation.Children,
+		&reservation.Description,
+		&reservation.Days,
+		&reservation.PriceForOneNight,
+	)
+	if err != nil {
+		return nil, translatePQ(err)
+	}
+	return reservation, nil
 }
 
 func (db *Repository) FindBookingByGuestUUID(ctx context.Context, uuid uuid.UUID) ([]entities.Reservation, error) {
 	return nil, nil
+}
+
+// Ошибки Postgres → доменные
+func translatePQ(err error) error {
+	var pqe *pq.Error
+	if errors.As(err, &pqe) {
+		switch pqe.Code {
+		case "23P01": // exclusion_violation (пересечение диапазонов)
+			return erro.ErrMatchWithOtherBooking
+		}
+	}
+	return err
 }

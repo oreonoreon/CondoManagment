@@ -41,39 +41,153 @@ func Test_synchronizeSliceFromDBandExcel(t *testing.T) {
 		services.NewService(mockStorageReservation, mockStorageGuest),
 	)
 
-	bookingTimeIn := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
-	bookingTimeOut := time.Date(2025, 6, 5, 0, 0, 0, 0, time.UTC)
-
-	bookingInDB := entities.Booking{
-
-		Guest: entities.Guest{
-			Phone: "123",
+	var bookingsFromExcel = []entities.Booking{
+		{
+			Guest: entities.Guest{
+				Phone: "+79130317799",
+			},
+			Reservation: entities.Reservation{
+				RoomNumber: "ME206",
+				CheckIn:    time.Date(2025, time.July, 10, 0, 0, 0, 0, time.UTC),
+				CheckOut:   time.Date(2025, time.July, 31, 0, 0, 0, 0, time.UTC),
+				Price:      31500,
+			},
 		},
-		Reservation: entities.Reservation{
-			RoomNumber: "101",
-			CheckIn:    bookingTimeIn,
-			CheckOut:   bookingTimeOut,
-			Price:      1000,
+		{
+			Guest: entities.Guest{
+				Phone: "+79069168888",
+			},
+			Reservation: entities.Reservation{
+				RoomNumber: "ME206",
+				CheckIn:    time.Date(2025, time.August, 1, 0, 0, 0, 0, time.UTC),
+				CheckOut:   time.Date(2025, time.August, 11, 0, 0, 0, 0, time.UTC),
+				Price:      14000,
+			},
+		},
+		{
+			Guest: entities.Guest{
+				Phone: "+79036635367",
+			},
+			Reservation: entities.Reservation{
+				RoomNumber: "ME206",
+				CheckIn:    time.Date(2025, time.October, 14, 0, 0, 0, 0, time.UTC),
+				CheckOut:   time.Date(2025, time.November, 14, 0, 0, 0, 0, time.UTC),
+				Price:      0,
+			},
+		},
+		{
+			Guest: entities.Guest{
+				Phone: "+79233274004",
+			},
+			Reservation: entities.Reservation{
+				RoomNumber: "ME206",
+				CheckIn:    time.Date(2026, time.February, 17, 0, 0, 0, 0, time.UTC),
+				CheckOut:   time.Date(2026, time.March, 5, 0, 0, 0, 0, time.UTC),
+				Price:      68800,
+			},
 		},
 	}
 
-	bookingInExcel := entities.Booking{
-		Guest: entities.Guest{
-			Phone: "123",
+	var bookingsFromDB = []entities.Booking{
+		{
+			Guest: entities.Guest{
+				Phone: "+79130317799",
+			},
+			Reservation: entities.Reservation{
+				RoomNumber: "ME206",
+				CheckIn:    time.Date(2025, time.July, 10, 0, 0, 0, 0, time.UTC),
+				CheckOut:   time.Date(2025, time.July, 31, 0, 0, 0, 0, time.UTC),
+				Price:      31500, // суммарная цена (из price)
+			},
 		},
-		Reservation: entities.Reservation{
-			RoomNumber: "101",
-			CheckIn:    bookingTimeIn,
-			CheckOut:   bookingTimeOut,
-			Price:      1000,
+		{
+			Guest: entities.Guest{
+				Phone: "+79069168888",
+			},
+			Reservation: entities.Reservation{
+				RoomNumber: "ME206",
+				CheckIn:    time.Date(2025, time.August, 1, 0, 0, 0, 0, time.UTC),
+				CheckOut:   time.Date(2025, time.August, 11, 0, 0, 0, 0, time.UTC),
+				Price:      0,
+			},
+		},
+		{
+			Guest: entities.Guest{
+				Phone: "+79036635367",
+			},
+			Reservation: entities.Reservation{
+				RoomNumber: "ME206",
+				CheckIn:    time.Date(2025, time.October, 14, 0, 0, 0, 0, time.UTC),
+				CheckOut:   time.Date(2025, time.November, 14, 0, 0, 0, 0, time.UTC),
+				Price:      0,
+			},
+		},
+		{
+			Guest: entities.Guest{
+				Phone: "+79233274004",
+			},
+			Reservation: entities.Reservation{
+				RoomNumber: "ME206",
+				CheckIn:    time.Date(2026, time.February, 17, 0, 0, 0, 0, time.UTC),
+				CheckOut:   time.Date(2026, time.March, 5, 0, 0, 0, 0, time.UTC),
+				Price:      68800,
+			},
 		},
 	}
-	var expectedExcel []entities.Booking
-	expectedDB := []entities.Booking{bookingInDB}
+
+	expectedExcel := []entities.Booking{
+		{
+			Guest: entities.Guest{
+				Phone: "+79069168888",
+			},
+			Reservation: entities.Reservation{
+				RoomNumber: "ME206",
+				CheckIn:    time.Date(2025, time.August, 1, 0, 0, 0, 0, time.UTC),
+				CheckOut:   time.Date(2025, time.August, 11, 0, 0, 0, 0, time.UTC),
+				Price:      14000,
+			},
+		},
+	}
+
+	expectedDB := []entities.Booking{
+		{
+			Guest: entities.Guest{
+				Phone: "+79130317799",
+			},
+			Reservation: entities.Reservation{
+				RoomNumber: "ME206",
+				CheckIn:    time.Date(2025, time.July, 10, 0, 0, 0, 0, time.UTC),
+				CheckOut:   time.Date(2025, time.July, 31, 0, 0, 0, 0, time.UTC),
+				Price:      31500, // суммарная цена (из price)
+			},
+		},
+		{
+			Guest: entities.Guest{
+				Phone: "+79036635367",
+			},
+			Reservation: entities.Reservation{
+				RoomNumber: "ME206",
+				CheckIn:    time.Date(2025, time.October, 14, 0, 0, 0, 0, time.UTC),
+				CheckOut:   time.Date(2025, time.November, 14, 0, 0, 0, 0, time.UTC),
+				Price:      0,
+			},
+		},
+		{
+			Guest: entities.Guest{
+				Phone: "+79233274004",
+			},
+			Reservation: entities.Reservation{
+				RoomNumber: "ME206",
+				CheckIn:    time.Date(2026, time.February, 17, 0, 0, 0, 0, time.UTC),
+				CheckOut:   time.Date(2026, time.March, 5, 0, 0, 0, 0, time.UTC),
+				Price:      68800,
+			},
+		},
+	}
 
 	t.Run("Удаляет совпадения и удаляет лишние из БД", func(t *testing.T) {
-		bookingsFromDB := []entities.Booking{bookingInDB}
-		bookingsFromExcel := []entities.Booking{bookingInExcel}
+		//bookingsFromDB := []entities.Booking{bookingInDB}
+		//bookingsFromExcel := []entities.Booking{bookingInExcel}
 
 		// Ожидаем вызов Delete для bookingToDelete
 		mockStorageReservation.On("Delete", ctx, 0).

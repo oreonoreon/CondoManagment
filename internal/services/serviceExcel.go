@@ -59,7 +59,7 @@ func (e *ServiceExcel) Sync(ctx context.Context, sheetName string, roomNumber st
 	}
 
 	for _, booking := range bookings {
-		err = e.service.CreateReservation(ctx, booking)
+		err = e.service.CreateReservation1(ctx, booking)
 		if err != nil {
 			zap.L().Error("Sync", zap.Error(err))
 			return nil, nil, err
