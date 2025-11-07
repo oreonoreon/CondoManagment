@@ -85,7 +85,7 @@ func (h *Handle) LogoutHandler(c *gin.Context) {
 		Path:     "/",
 		MaxAge:   -1, // <— важное место
 		HttpOnly: true,
-		Secure:   false, // в проде true для https
+		Secure:   true, // в проде true для https
 	})
 
 	if err := session.Save(); err != nil {
