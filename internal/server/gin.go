@@ -20,25 +20,38 @@ import (
 func Gin(h Handle) {
 	router := gin.Default()
 
-	allowOrigin, ok := os.LookupEnv("FRONT_URL") //todo вынести все env в подобающее место
+	allowOrigin, ok := os.LookupEnv("FRONT_URL")
 	if !ok {
-		allowOrigin = "*"
+		allowOrigin = "http://localhost:5173" // явно указываем для разработки
 	}
 
-	//---------------------------
+	// Определяем режим работы
+	var isProduction bool
+	ginMode, ok := os.LookupEnv("GIN_MODE")
+	if !ok {
+		isProduction = false
+		zap.L().Info("GIN_MODE not set, default to debug")
+	} else {
+		if ginMode == "release" {
+			isProduction = true
+		} else {
+			isProduction = false
+		}
+	}
+
+	// CORS конфигурация
 	router.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{allowOrigin}, // или "*" для всех
+		AllowOrigins:     []string{allowOrigin},
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Accept"},
-		ExposeHeaders:    []string{"Content-Length"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
+		ExposeHeaders:    []string{"Content-Length", "Set-Cookie"},
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
 	}))
-	//---------------------------
 
-	router.LoadHTMLGlob("html/*.html") // шаблоны
+	router.LoadHTMLGlob("html/*.html")
 
-	db, err := sql.Open("postgres", repo.DataSourceName) //todo не хорошо что тут используем пакет repo
+	db, err := sql.Open("postgres", repo.DataSourceName)
 	if err != nil {
 		panic(err)
 	}
@@ -48,66 +61,62 @@ func Gin(h Handle) {
 		panic(err)
 	}
 
-	store.Options(sessions.Options{
+	// ИСПРАВЛЕНИЕ: правильные настройки cookies в зависимости от окружения
+	cookieOptions := sessions.Options{
 		Path:     "/",
-		MaxAge:   60 * 60 * 24, // день
+		MaxAge:   60 * 60 * 24, // 24 часа
 		HttpOnly: true,
-		Secure:   true, // в проде true при https
-	})
+		Secure:   isProduction,         // true только в production с HTTPS
+		SameSite: http.SameSiteLaxMode, // для разработки Lax, для production можно None
+	}
+
+	// Если production и используется cross-origin, нужен SameSite=None
+	if isProduction {
+		cookieOptions.SameSite = http.SameSiteNoneMode
+	}
+
+	store.Options(cookieOptions)
 	router.Use(sessions.Sessions("sess", store))
+
+	// Добавим middleware для логирования cookies (для отладки)
+	//router.Use(func(c *gin.Context) {
+	//	zap.L().Debug("Request cookies", zap.String("cookies", c.Request.Header.Get("Cookie")))
+	//	c.Next()
+	//	zap.L().Debug("Response Set-Cookie", zap.Any("set-cookie", c.Writer.Header()["Set-Cookie"]))
+	//})
 
 	router.POST("/login", h.LoginHandler)
 
-	// Защищённые маршруты: сначала сессия, потом authorizer
+	// Защищённые маршруты
 	api := router.Group("/calendar")
 	api.Use(SessionAuthMiddleware())
 	{
 		api.POST("/createUser", h.CreateUser)
-
 		api.POST("/logout", h.LogoutHandler)
-
 		api.GET("/sync", h.SynchroniseBookings)
 		api.POST("/sync", h.SynchroniseBookings)
-
 		api.GET("/ExcelRes", h.ExcelBookings)
 		api.POST("/ExcelRes", h.ExcelBookings)
-
 		api.GET("/middleprice", h.MiddlePriceForPeriod)
 		api.POST("/middleprice", h.MiddlePriceForPeriod)
-
 		api.GET("/middlepriceReport", h.MiddlePriceForPeriodReport)
 		api.POST("/middlepriceReport", h.MiddlePriceForPeriodReport)
-
 		api.GET("/totalpriceReport", h.TotalPriceForPeriodReport)
 		api.POST("/totalpriceReport", h.TotalPriceForPeriodReport)
-
 		api.GET("/report", h.Report)
 		api.POST("/report", h.Report)
-
 		api.POST("/r", h.BookingsPost)
 		api.POST("/rall", h.AllBookingsPost)
-
 		api.GET("/r", h.ApartmentsGet)
-
 		api.PATCH("/updateBooking", h.UpdateBooking)
-
 		api.POST("/createBooking", h.CreateBookingPost)
-
 		api.DELETE("/deleteBooking/:id", h.DeleteBookingByID)
-
 		api.POST("/BnB", h.ScrapBnBPost)
-
 		api.POST("/BnB/locationName", h.ScrapBnBLocationNameUpdate)
-
 		api.POST("/BnB/room", h.ScrapBnbRoomUnderstandableTypePatch)
 	}
-	//router.POST("/BnB", h.ScrapBnBPost)
-	//
-	//router.POST("/BnB/locationName", h.ScrapBnBLocationNameUpdate)
-	//
-	//router.POST("/BnB/room", h.ScrapBnbRoomUnderstandableTypePatch)
 
-	router.Run(":8080") // gin сам управляет тайм-аутами, но можно кастомизировать
+	router.Run(":8080")
 }
 
 type Handle struct {
