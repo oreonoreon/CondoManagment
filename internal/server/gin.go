@@ -1,8 +1,8 @@
 package server
 
 import (
+	"awesomeProject/internal/config"
 	"awesomeProject/internal/entities"
-	"awesomeProject/internal/repo"
 	"awesomeProject/internal/services"
 	"database/sql"
 	"errors"
@@ -12,7 +12,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 	"net/http"
-	"os"
 	"strconv"
 	"time"
 )
@@ -20,28 +19,9 @@ import (
 func Gin(h Handle) {
 	router := gin.Default()
 
-	allowOrigin, ok := os.LookupEnv("FRONT_URL")
-	if !ok {
-		allowOrigin = "http://localhost:5173" // явно указываем для разработки
-	}
-
-	// Определяем режим работы
-	var isProduction bool
-	ginMode, ok := os.LookupEnv("GIN_MODE")
-	if !ok {
-		isProduction = false
-		zap.L().Info("GIN_MODE not set, default to debug")
-	} else {
-		if ginMode == "release" {
-			isProduction = true
-		} else {
-			isProduction = false
-		}
-	}
-
 	// CORS конфигурация
 	router.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{allowOrigin},
+		AllowOrigins:     []string{h.cfg.FrontURL},
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
 		ExposeHeaders:    []string{"Content-Length", "Set-Cookie"},
@@ -51,7 +31,7 @@ func Gin(h Handle) {
 
 	router.LoadHTMLGlob("html/*.html")
 
-	db, err := sql.Open("postgres", repo.DataSourceName)
+	db, err := sql.Open("postgres", h.cfg.DatabaseDSN) //todo не хорошо что здесь идёт повторное открытие соединения с бд
 	if err != nil {
 		panic(err)
 	}
@@ -66,12 +46,12 @@ func Gin(h Handle) {
 		Path:     "/",
 		MaxAge:   60 * 60 * 24, // 24 часа
 		HttpOnly: true,
-		Secure:   isProduction,         // true только в production с HTTPS
+		Secure:   h.cfg.IsProduction,   // true только в production с HTTPS
 		SameSite: http.SameSiteLaxMode, // для разработки Lax, для production можно None
 	}
 
 	// Если production и используется cross-origin, нужен SameSite=None
-	if isProduction {
+	if h.cfg.IsProduction {
 		cookieOptions.SameSite = http.SameSiteNoneMode
 	}
 
@@ -127,6 +107,7 @@ type Handle struct {
 	*services.ServiceApartment
 	*services.ServiceBnB
 	*services.ServiceUsers
+	cfg *config.ConfigEnv // добавляем поле конфига
 }
 
 func NewHandle(
@@ -136,7 +117,8 @@ func NewHandle(
 	serviceExcel *services.ServiceExcel,
 	serviceApartment *services.ServiceApartment,
 	servicesBnB *services.ServiceBnB,
-	servicesUsers *services.ServiceUsers) Handle {
+	servicesUsers *services.ServiceUsers,
+	cfg *config.ConfigEnv) Handle {
 	return Handle{
 		serviceReservation,
 		servicesInterface,
@@ -145,6 +127,7 @@ func NewHandle(
 		serviceApartment,
 		servicesBnB,
 		servicesUsers,
+		cfg,
 	}
 }
 

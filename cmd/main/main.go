@@ -13,8 +13,9 @@ import (
 )
 
 func main() {
-
 	conf := config.InitConfig()
+
+	confEnv := config.LoadEnv()
 
 	zapConfig := zap.NewProductionConfig()
 	zapConfig.EncoderConfig.EncodeTime = zapcore.TimeEncoderOfLayout(time.RFC3339)
@@ -32,17 +33,10 @@ func main() {
 	zap.L().Info("APPLICATION START")
 
 	//create Db connection
-	db, err := repo.ConnectionPostgreSQl()
+	db, err := repo.ConnectionPostgreSQl(confEnv)
 	if err != nil {
 		panic(err)
 	}
-
-	//defer func(db *standard.DB) {
-	//	err := db.Close()
-	//	if err != nil {
-	//		zap.L().Error("db.Close()", zap.Error(err))
-	//	}
-	//}(db)
 
 	defer func(db *sql.DB) {
 		err := db.Close()
@@ -84,6 +78,7 @@ func main() {
 		serviceApartment,
 		serviceBnB,
 		servicesUsers,
+		confEnv,
 	)
 
 	//server

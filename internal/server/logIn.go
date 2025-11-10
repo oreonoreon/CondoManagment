@@ -8,7 +8,6 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
 	"net/http"
-	"os"
 )
 
 func (h *Handle) CreateUser(c *gin.Context) {
@@ -86,18 +85,18 @@ func (h *Handle) LogoutHandler(c *gin.Context) {
 	session.Clear()
 
 	// Определяем режим работы
-	isProduction := os.Getenv("GIN_MODE") == "release"
+	//isProduction := os.Getenv("GIN_MODE") == "release"
 
 	// ИСПРАВЛЕНИЕ: используем те же настройки, что и при создании
 	cookieOptions := sessions.Options{
 		Path:     "/",
 		MaxAge:   -1, // удаляем cookie
 		HttpOnly: true,
-		Secure:   isProduction,
+		Secure:   h.cfg.IsProduction,
 		SameSite: http.SameSiteLaxMode,
 	}
 
-	if isProduction {
+	if h.cfg.IsProduction {
 		cookieOptions.SameSite = http.SameSiteNoneMode
 	}
 
