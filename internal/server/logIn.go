@@ -67,9 +67,6 @@ func (h *Handle) LoginHandler(c *gin.Context) {
 	session := sessions.Default(c)
 	session.Set("userID", user.ID.String())
 
-	// Логирование для отладки
-	zap.L().Info("Setting session", zap.String("userID", user.ID.String()))
-
 	if err := session.Save(); err != nil {
 		zap.L().Error("LoginHandler: failed to save session", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not save session"})
@@ -83,9 +80,6 @@ func (h *Handle) LoginHandler(c *gin.Context) {
 func (h *Handle) LogoutHandler(c *gin.Context) {
 	session := sessions.Default(c)
 	session.Clear()
-
-	// Определяем режим работы
-	//isProduction := os.Getenv("GIN_MODE") == "release"
 
 	// ИСПРАВЛЕНИЕ: используем те же настройки, что и при создании
 	cookieOptions := sessions.Options{
@@ -115,12 +109,6 @@ func SessionAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		session := sessions.Default(c)
 		uid := session.Get("userID")
-
-		// Логирование для отладки
-		zap.L().Debug("SessionAuthMiddleware",
-			zap.Any("userID", uid),
-			zap.String("path", c.Request.URL.Path),
-		)
 
 		if uid == nil {
 			zap.L().Warn("Unauthorized access attempt", zap.String("path", c.Request.URL.Path))

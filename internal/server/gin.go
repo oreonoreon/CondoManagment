@@ -6,15 +6,23 @@ import (
 	"awesomeProject/internal/services"
 	"database/sql"
 	"errors"
+	"github.com/antonlindstrom/pgstore"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-contrib/sessions"
-	"github.com/gin-contrib/sessions/postgres"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 	"net/http"
 	"strconv"
 	"time"
 )
+
+type SpecialStore struct {
+	*pgstore.PGStore
+}
+
+func (s SpecialStore) Options(options sessions.Options) {
+	s.PGStore.Options = options.ToGorillaOptions()
+}
 
 func Gin(h Handle) {
 	router := gin.Default()
@@ -31,17 +39,28 @@ func Gin(h Handle) {
 
 	router.LoadHTMLGlob("html/*.html")
 
+	//------------------ Всё это неплохо бы вынести --------------
 	db, err := sql.Open("postgres", h.cfg.DatabaseDSN) //todo не хорошо что здесь идёт повторное открытие соединения с бд
 	if err != nil {
 		panic(err)
 	}
 
-	store, err := postgres.NewStore(db, []byte("везде жопа лысого ПОПУГАЯ!"))
+	//store, err := postgres.NewStore(db, []byte("везде жопа лысого ПОПУГАЯ!"))
+	//if err != nil {
+	//	panic(err)
+	//}
+
+	notSpesialStore, err := pgstore.NewPGStoreFromPool(db, []byte("везде жопа лысого ПОПУГАЯ!"))
 	if err != nil {
 		panic(err)
 	}
 
-	// ИСПРАВЛЕНИЕ: правильные настройки cookies в зависимости от окружения
+	defer notSpesialStore.StopCleanup(notSpesialStore.Cleanup(time.Hour * 24))
+
+	store := SpecialStore{notSpesialStore}
+	//-----------------------------------------------------------------------------
+
+	//настройки cookies в зависимости от окружения
 	cookieOptions := sessions.Options{
 		Path:     "/",
 		MaxAge:   60 * 60 * 24, // 24 часа
@@ -57,13 +76,6 @@ func Gin(h Handle) {
 
 	store.Options(cookieOptions)
 	router.Use(sessions.Sessions("sess", store))
-
-	// Добавим middleware для логирования cookies (для отладки)
-	//router.Use(func(c *gin.Context) {
-	//	zap.L().Debug("Request cookies", zap.String("cookies", c.Request.Header.Get("Cookie")))
-	//	c.Next()
-	//	zap.L().Debug("Response Set-Cookie", zap.Any("set-cookie", c.Writer.Header()["Set-Cookie"]))
-	//})
 
 	router.POST("/login", h.LoginHandler)
 
