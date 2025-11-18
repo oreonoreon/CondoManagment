@@ -4,6 +4,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 	"net/http"
+	"strconv"
 )
 
 func (h *Handle) Report(c *gin.Context) {
@@ -29,8 +30,26 @@ func (h *Handle) Report(c *gin.Context) {
 		return
 	}
 
-	c.Header("Content-Disposition", "attachment; filename=\""+request.RoomNumber+".xlsx\"")
-	c.Data(http.StatusOK, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileData)
+	//c.Header("Content-Disposition", "attachment; filename=\""+request.RoomNumber+".xlsx\"")
+	//c.Data(http.StatusOK, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileData)
+
+	fileName := request.RoomNumber + ".xlsx"
+
+	// Устанавливаем заголовки ПЕРЕД отправкой данных
+	c.Header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	c.Header("Content-Disposition", "attachment; filename=\""+fileName+"\"")
+	c.Header("Content-Transfer-Encoding", "binary")
+	c.Header("Content-Length", strconv.Itoa(len(fileData)))
+	c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
+	c.Header("Pragma", "no-cache")
+	c.Header("Expires", "0")
+
+	// Используем Writer напрямую для бинарных данных
+	c.Writer.WriteHeader(http.StatusOK)
+	_, err = c.Writer.Write(fileData)
+	if err != nil {
+		zap.L().Error("Write file data", zap.Error(err))
+	}
 }
 
 func (h *Handle) MiddlePriceForPeriodReport(c *gin.Context) {
