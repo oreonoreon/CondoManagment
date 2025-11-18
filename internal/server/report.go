@@ -7,25 +7,30 @@ import (
 )
 
 func (h *Handle) Report(c *gin.Context) {
-	if c.Request.Method == http.MethodGet {
-		c.HTML(http.StatusOK, "report.html", nil)
+	type ReportRequest struct {
+		RoomNumber string `json:"room_number"`
+		Start      string `json:"start"`
+		End        string `json:"end"`
+	}
+
+	request := ReportRequest{}
+
+	err := c.BindJSON(&request)
+	if err != nil {
+		zap.L().Error("CreateBookingPost", zap.Error(err))
+		c.String(http.StatusBadRequest, err.Error())
 		return
 	}
 
-	roomNumber := c.PostForm("room_number")
-	start := c.PostForm("start")
-	end := c.PostForm("end")
-
-	filePath, err := h.Service.CreateReport(c.Request.Context(), roomNumber, start, end)
+	fileData, err := h.Service.CreateReport(c.Request.Context(), request.RoomNumber, request.Start, request.End)
 	if err != nil {
 		zap.L().Error("CreateReport", zap.Error(err))
 		c.String(http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	c.Header("Content-Disposition", "attachment; filename=\""+roomNumber+".xlsx\"")
-	c.Header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-	c.File(filePath)
+	c.Header("Content-Disposition", "attachment; filename=\""+request.RoomNumber+".xlsx\"")
+	c.Data(http.StatusOK, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileData)
 }
 
 func (h *Handle) MiddlePriceForPeriodReport(c *gin.Context) {

@@ -8,10 +8,10 @@ import (
 	"strconv"
 )
 
-func ReportForOwner(info []entities.Booking) (string, error) {
+func ReportForOwner(info []entities.Booking) ([]byte, error) {
 	file, err := excelize.OpenFile("./etc/Book_1.xlsx")
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	defer func() {
@@ -29,7 +29,7 @@ func ReportForOwner(info []entities.Booking) (string, error) {
 		// Получаем стиль
 		styleID, err := file.GetCellStyle(sheetName, sourceCell)
 		if err != nil {
-			return "", fmt.Errorf("не удалось получить стиль из %s: %w", sourceCell, err)
+			return nil, fmt.Errorf("не удалось получить стиль из %s: %w", sourceCell, err)
 		}
 		cellsStyleID = append(cellsStyleID, styleID)
 	}
@@ -37,7 +37,7 @@ func ReportForOwner(info []entities.Booking) (string, error) {
 	// Получаем высоту строки 2
 	height, err := file.GetRowHeight(sheetName, 2)
 	if err != nil {
-		return "", fmt.Errorf("не удалось получить высоту строки: %w", err)
+		return nil, fmt.Errorf("не удалось получить высоту строки: %w", err)
 	}
 
 	for i, bookingInfo := range info {
@@ -45,137 +45,144 @@ func ReportForOwner(info []entities.Booking) (string, error) {
 
 		err := file.SetRowHeight(sheetName, i+2, height)
 		if err != nil {
-			return "", fmt.Errorf("не удалось установить высоту строки %s: %w", row, err)
+			return nil, fmt.Errorf("не удалось установить высоту строки %s: %w", row, err)
 		}
 
 		//A
 		err = file.SetCellStyle(sheetName, "A"+row, "A"+row, cellsStyleID[0])
 		if err != nil {
-			return "", fmt.Errorf("не удалось применить стиль к %s: %w", "A"+row, err)
+			return nil, fmt.Errorf("не удалось применить стиль к %s: %w", "A"+row, err)
 		}
 		err = file.SetCellValue(sheetName, "A"+row, bookingInfo.RoomNumber)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 
 		//B
 		err = file.SetCellStyle(sheetName, "B"+row, "B"+row, cellsStyleID[1])
 		if err != nil {
-			return "", fmt.Errorf("не удалось применить стиль к %s: %w", "A"+row, err)
+			return nil, fmt.Errorf("не удалось применить стиль к %s: %w", "A"+row, err)
 		}
 		err = file.SetCellValue(sheetName, "B"+row, bookingInfo.CheckIn)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 
 		//C
 		err = file.SetCellStyle(sheetName, "C"+row, "C"+row, cellsStyleID[2])
 		if err != nil {
-			return "", fmt.Errorf("не удалось применить стиль к %s: %w", "A"+row, err)
+			return nil, fmt.Errorf("не удалось применить стиль к %s: %w", "A"+row, err)
 		}
 		err = file.SetCellValue(sheetName, "C"+row, bookingInfo.CheckOut)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 
 		//D
 		err = file.SetCellStyle(sheetName, "D"+row, "D"+row, cellsStyleID[3])
 		if err != nil {
-			return "", fmt.Errorf("не удалось применить стиль к %s: %w", "A"+row, err)
+			return nil, fmt.Errorf("не удалось применить стиль к %s: %w", "A"+row, err)
 		}
 		err = file.SetCellValue(sheetName, "D"+row, bookingInfo.Days)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 
 		//E
 		err = file.SetCellStyle(sheetName, "E"+row, "E"+row, cellsStyleID[4])
 		if err != nil {
-			return "", fmt.Errorf("не удалось применить стиль к %s: %w", "A"+row, err)
+			return nil, fmt.Errorf("не удалось применить стиль к %s: %w", "A"+row, err)
 		}
 		err = file.SetCellValue(sheetName, "E"+row, bookingInfo.Name)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 
 		//F
 		err = file.SetCellStyle(sheetName, "F"+row, "F"+row, cellsStyleID[5])
 		if err != nil {
-			return "", fmt.Errorf("не удалось применить стиль к %s: %w", "A"+row, err)
+			return nil, fmt.Errorf("не удалось применить стиль к %s: %w", "A"+row, err)
 		}
 		err = file.SetCellValue(sheetName, "F"+row, bookingInfo.Phone)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 
 		//G
 		err = file.SetCellStyle(sheetName, "G"+row, "G"+row, cellsStyleID[6])
 		if err != nil {
-			return "", fmt.Errorf("не удалось применить стиль к %s: %w", "A"+row, err)
+			return nil, fmt.Errorf("не удалось применить стиль к %s: %w", "A"+row, err)
 		}
 		err = file.SetCellValue(sheetName, "G"+row, bookingInfo.Adult)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 
 		//H
 		err = file.SetCellStyle(sheetName, "H"+row, "H"+row, cellsStyleID[7])
 		if err != nil {
-			return "", fmt.Errorf("не удалось применить стиль к %s: %w", "A"+row, err)
+			return nil, fmt.Errorf("не удалось применить стиль к %s: %w", "A"+row, err)
 		}
 		err = file.SetCellValue(sheetName, "H"+row, bookingInfo.Children)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 
 		//I
 		err = file.SetCellStyle(sheetName, "I"+row, "I"+row, cellsStyleID[8])
 		if err != nil {
-			return "", fmt.Errorf("не удалось применить стиль к %s: %w", "A"+row, err)
+			return nil, fmt.Errorf("не удалось применить стиль к %s: %w", "A"+row, err)
 		}
 		err = file.SetCellValue(sheetName, "I"+row, bookingInfo.Price)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 
 		//J
 		err = file.SetCellStyle(sheetName, "J"+row, "J"+row, cellsStyleID[9])
 		if err != nil {
-			return "", fmt.Errorf("не удалось применить стиль к %s: %w", "A"+row, err)
+			return nil, fmt.Errorf("не удалось применить стиль к %s: %w", "A"+row, err)
 		}
 		err = file.SetCellValue(sheetName, "J"+row, bookingInfo.Price*70/100)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 
 		//K
 		err = file.SetCellStyle(sheetName, "K"+row, "K"+row, cellsStyleID[10])
 		if err != nil {
-			return "", fmt.Errorf("не удалось применить стиль к %s: %w", "A"+row, err)
+			return nil, fmt.Errorf("не удалось применить стиль к %s: %w", "A"+row, err)
 		}
 		err = file.SetCellValue(sheetName, "K"+row, bookingInfo.Price*30/100)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 
 		//L
 		err = file.SetCellStyle(sheetName, "L"+row, "L"+row, cellsStyleID[11])
 		if err != nil {
-			return "", fmt.Errorf("не удалось применить стиль к %s: %w", "A"+row, err)
+			return nil, fmt.Errorf("не удалось применить стиль к %s: %w", "A"+row, err)
 		}
 		err = file.SetCellValue(sheetName, "L"+row, bookingInfo.PriceForOneNight)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 
 	}
 
-	err = file.SaveAs("./etc/" + info[0].RoomNumber + ".xlsx")
+	//err = file.SaveAs("./etc/" + info[0].RoomNumber + ".xlsx")
+	//if err != nil {
+	//	zap.L().Error("ReportForOwner/file.SaveAs()", zap.Error(err))
+	//}
+
+	buffer, err := file.WriteToBuffer()
 	if err != nil {
-		zap.L().Error("ReportForOwner/file.SaveAs()", zap.Error(err))
+		zap.L().Error("ReportForOwner/file.WriteToBuffer()", zap.Error(err))
+		return nil, err
 	}
 
-	return file.Path, nil
+	//return file.Path, nil
+	return buffer.Bytes(), nil
 }
 
 func SetCellStyleAndValue(file *excelize.File, sheetName string, cell string, styleID int, value interface{}) error {

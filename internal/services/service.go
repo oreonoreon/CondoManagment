@@ -318,21 +318,21 @@ func (s *Service) CreateReservation1(ctx context.Context, booking entities.Booki
 }
 
 // CreateReport Создание репорта для собственника
-func (s *Service) CreateReport(ctx context.Context, roomNumber string, startPeriod string, endPeriod string) (string, error) {
+func (s *Service) CreateReport(ctx context.Context, roomNumber string, startPeriod string, endPeriod string) ([]byte, error) {
 	bookings, err := s.GetBooking(ctx, roomNumber, startPeriod, endPeriod)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if len(bookings) == 0 {
-		return "", erro.ErrSliceOfBookingIsEmpty
+		return nil, erro.ErrSliceOfBookingIsEmpty
 	}
 
-	path, err := report.ReportForOwner(bookings)
+	report, err := report.ReportForOwner(bookings)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return path, nil
+	return report, nil
 }
 
 func (s *Service) GetBookingALLForApartmentALL(ctx context.Context, roomNumbers []string) ([]entities.Booking, error) {

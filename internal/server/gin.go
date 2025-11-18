@@ -95,7 +95,6 @@ func Gin(h Handle) {
 		api.POST("/middlepriceReport", h.MiddlePriceForPeriodReport)
 		api.GET("/totalpriceReport", h.TotalPriceForPeriodReport)
 		api.POST("/totalpriceReport", h.TotalPriceForPeriodReport)
-		api.GET("/report", h.Report)
 		api.POST("/report", h.Report)
 		api.POST("/r", h.BookingsPost)
 		api.POST("/rall", h.AllBookingsPost)
