@@ -69,24 +69,3 @@ func (db *Repository) ReadApartmentAll(ctx context.Context, role string) ([]enti
 
 	return apartments, nil
 }
-
-type Company struct {
-	Name       string
-	Apartments []string
-	Users      []User
-}
-
-type Apartment struct {
-	RoomNumber     string
-	Description    string
-	AirbnbCalendar string
-}
-
-type User struct {
-	name string
-	role Role
-}
-
-type Role struct {
-	Name string
-}
