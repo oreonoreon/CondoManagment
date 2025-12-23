@@ -53,6 +53,12 @@ func (h *Handle) Report(c *gin.Context) {
 }
 
 func (h *Handle) MiddlePriceForPeriodReport(c *gin.Context) {
+	roleStr, err := getRoleFromContext(c)
+	if err != nil {
+		c.String(http.StatusUnauthorized, err.Error())
+		return
+	}
+
 	if c.Request.Method == http.MethodGet {
 		c.HTML(http.StatusOK, "middlepriceReport.html", nil)
 		return
@@ -60,7 +66,7 @@ func (h *Handle) MiddlePriceForPeriodReport(c *gin.Context) {
 
 	start := c.PostForm("start")
 	end := c.PostForm("end")
-	apartments, err := h.ServiceApartment.GetAllApartment(c.Request.Context())
+	apartments, err := h.ServiceApartment.GetAllApartment(c.Request.Context(), roleStr)
 	if err != nil {
 		zap.L().Error("FindMiddlePriceForPeriod", zap.Error(err))
 		c.String(http.StatusInternalServerError, err.Error())
@@ -78,6 +84,12 @@ func (h *Handle) MiddlePriceForPeriodReport(c *gin.Context) {
 }
 
 func (h *Handle) TotalPriceForPeriodReport(c *gin.Context) {
+	roleStr, err := getRoleFromContext(c)
+	if err != nil {
+		c.String(http.StatusUnauthorized, err.Error())
+		return
+	}
+
 	if c.Request.Method == http.MethodGet {
 		c.HTML(http.StatusOK, "totalpriceReport.html", nil)
 		return
@@ -85,7 +97,7 @@ func (h *Handle) TotalPriceForPeriodReport(c *gin.Context) {
 
 	start := c.PostForm("start")
 	end := c.PostForm("end")
-	apartments, err := h.ServiceApartment.GetAllApartment(c.Request.Context())
+	apartments, err := h.ServiceApartment.GetAllApartment(c.Request.Context(), roleStr)
 	if err != nil {
 		zap.L().Error("TotalPriceForPeriodReport", zap.Error(err))
 		c.String(http.StatusInternalServerError, err.Error())

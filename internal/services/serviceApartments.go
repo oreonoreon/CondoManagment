@@ -10,7 +10,7 @@ type ServiceApartment struct {
 }
 
 type StorageApartment interface {
-	ReadApartmentAll(ctx context.Context) ([]entities.Apartment, error)
+	ReadApartmentAll(ctx context.Context, role string) ([]entities.Apartment, error)
 }
 
 func NewServiceApartment(storageApartment StorageApartment) *ServiceApartment {
@@ -19,8 +19,8 @@ func NewServiceApartment(storageApartment StorageApartment) *ServiceApartment {
 	}
 }
 
-func (s *ServiceApartment) GetAllApartment(ctx context.Context) ([]entities.Apartment, error) {
-	apartment, err := s.storageApartment.ReadApartmentAll(ctx)
+func (s *ServiceApartment) GetAllApartment(ctx context.Context, role string) ([]entities.Apartment, error) {
+	apartment, err := s.storageApartment.ReadApartmentAll(ctx, role)
 	if err != nil {
 		return nil, err
 	}

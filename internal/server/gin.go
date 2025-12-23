@@ -200,9 +200,27 @@ func (h *Handle) CreateBookingPost(c *gin.Context) {
 	c.IndentedJSON(http.StatusCreated, booking)
 }
 
+func getRoleFromContext(c *gin.Context) (string, error) {
+	role, exist := c.Get("role")
+	if !exist {
+		return "", errors.New("no role found in session")
+	}
+	roleStr, ok := role.(string)
+	if !ok {
+		return "", errors.New("invalid role type in session")
+	}
+	return roleStr, nil
+}
+
 // ApartmentsGet request to get names of all appartment
 func (h *Handle) ApartmentsGet(c *gin.Context) {
-	apartments, err := h.ServiceApartment.GetAllApartment(c.Request.Context())
+	roleStr, err := getRoleFromContext(c)
+	if err != nil {
+		c.String(http.StatusUnauthorized, err.Error())
+		return
+	}
+
+	apartments, err := h.ServiceApartment.GetAllApartment(c.Request.Context(), roleStr)
 	if err != nil {
 		c.String(http.StatusInternalServerError, err.Error())
 		return

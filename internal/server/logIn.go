@@ -66,6 +66,7 @@ func (h *Handle) LoginHandler(c *gin.Context) {
 
 	session := sessions.Default(c)
 	session.Set("userID", user.ID.String())
+	session.Set("role", user.Role)
 
 	if err := session.Save(); err != nil {
 		zap.L().Error("LoginHandler: failed to save session", zap.Error(err))
@@ -109,6 +110,7 @@ func SessionAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		session := sessions.Default(c)
 		uid := session.Get("userID")
+		role := session.Get("role")
 
 		if uid == nil {
 			zap.L().Warn("Unauthorized access attempt", zap.String("path", c.Request.URL.Path))
@@ -117,6 +119,7 @@ func SessionAuthMiddleware() gin.HandlerFunc {
 		}
 
 		c.Set("userID", uid)
+		c.Set("role", role)
 		c.Next()
 	}
 }
