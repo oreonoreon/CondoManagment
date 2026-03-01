@@ -19,7 +19,6 @@ type Service struct {
 }
 
 type StorageReservation interface {
-	//BeginTx(ctx context.Context, opts *sql.TxOptions) (context.Context, *sql.Tx, error)
 	UpdateReservation(ctx context.Context, r entities.Reservation) (*entities.Reservation, error)
 	Create(ctx context.Context, r entities.Reservation) (*entities.Reservation, error)
 	ReadALLByRoomNumber(ctx context.Context, roomNumber string) ([]entities.Reservation, error)
@@ -42,77 +41,6 @@ func NewService(storage StorageReservation, storageGuest StorageGuest) *Service 
 		storageGuest:       storageGuest,
 	}
 }
-
-//func (s *Service) UpdateBooking(ctx context.Context, booking entities.Booking) (*entities.Booking, error) {
-//	// 1) Стартуем транзакцию и привязываем её к контексту
-//	ctx, tx, err := s.storageReservation.BeginTx(ctx, &sql.TxOptions{
-//		Isolation: sql.LevelReadCommitted, // достаточно для этого сценария
-//		ReadOnly:  false,
-//	})
-//	if err != nil {
-//		return nil, err
-//	}
-//	// Всегда откатываем, если не было коммита (дефер безопасен)
-//	defer tx.Rollback()
-//
-//	// 2) Все дальнейшие вызовы стораджей идут с тем же ctx (внутри они увидят tx)
-//	r, err := s.storageReservation.GetReservationByID(ctx, booking.Reservation.Oid)
-//	if err != nil {
-//		zap.L().Error("UpdateBooking", zap.Error(err))
-//		return nil, err
-//	}
-//	if r == nil {
-//		zap.L().Error("UpdateBooking", zap.Error(erro.ErrEmptyResultFromReservation))
-//		return nil, erro.ErrEmptyResultFromReservation
-//	}
-//
-//	g, err := s.storageGuest.ReadGuest(ctx, r.GuestID)
-//	if err != nil {
-//		zap.L().Error("UpdateBooking", zap.Error(err))
-//		return nil, err
-//	}
-//	if g == nil {
-//		zap.L().Error("UpdateBooking", zap.Error(erro.ErrReservationHasGuestUUIDbutGuestNotFound))
-//		return nil, erro.ErrReservationHasGuestUUIDbutGuestNotFound
-//	}
-//
-//	var updatedGuest *entities.Guest
-//	if booking.Guest.Phone != g.Phone {
-//		updatedGuest, err = s.CreateGuest(ctx, booking.Guest)
-//		if err != nil {
-//			zap.L().Error("UpdateBooking", zap.Error(err))
-//			return nil, err // транзакция откатится по defer
-//		}
-//	} else {
-//		booking.Guest.GuestID = g.GuestID
-//		updatedGuest, err = s.storageGuest.UpdateGuest(ctx, booking.Guest)
-//		if err != nil {
-//			zap.L().Error("UpdateBooking", zap.Error(err))
-//			return nil, err // транзакция откатится
-//		}
-//	}
-//
-//	booking.Reservation.GuestID = updatedGuest.GuestID
-//	booking.Reservation = prepareDaysAndPriceForNight(booking.Reservation)
-//
-//	updateReservation, err := s.storageReservation.UpdateReservation(ctx, booking.Reservation)
-//	if err != nil {
-//		// здесь может прилететь 23P01 (пересечение дат), и мы просто вернём ошибку — defer сделает Rollback
-//		zap.L().Error("UpdateBooking", zap.Error(err))
-//		return nil, err
-//	}
-//
-//	b := entities.Booking{
-//		Guest:       *updatedGuest,
-//		Reservation: *updateReservation,
-//	}
-//
-//	// 3) Фиксируем транзакцию
-//	if err := tx.Commit(); err != nil {
-//		return nil, err
-//	}
-//	return &b, nil
-//}
 
 func (s *Service) UpdateBooking(ctx context.Context, booking entities.Booking) (*entities.Booking, error) {
 	r, err := s.storageReservation.GetReservationByID(ctx, booking.Reservation.Oid)
