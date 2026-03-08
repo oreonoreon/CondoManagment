@@ -168,7 +168,7 @@ func (h *Handle) DeleteBookingByID(c *gin.Context) {
 		return
 	}
 
-	reservation, err := h.Service.DeleteReservation(c.Request.Context(), id)
+	reservation, err := h.TransactionalService.DeleteReservation(c.Request.Context(), id)
 	if err != nil {
 		c.String(http.StatusInternalServerError, err.Error())
 		return
@@ -242,7 +242,7 @@ func (h *Handle) BookingsPost(c *gin.Context) {
 		return
 	}
 
-	bookings, err := h.Service.GetBookingALLForApartment(c.Request.Context(), request.RoomNumber)
+	bookings, err := h.TransactionalService.GetBookingALLForApartment(c.Request.Context(), request.RoomNumber)
 	if err != nil {
 		c.String(http.StatusInternalServerError, err.Error())
 		return
@@ -265,7 +265,7 @@ func (h *Handle) AllBookingsPost(c *gin.Context) {
 		return
 	}
 
-	bookings, err := h.Service.GetBookingALLForApartmentALL(c.Request.Context(), request.RoomNumbers)
+	bookings, err := h.TransactionalService.GetBookingALLForApartmentALL(c.Request.Context(), request.RoomNumbers)
 	if err != nil {
 		c.String(http.StatusInternalServerError, err.Error())
 		return
@@ -285,7 +285,7 @@ func (h *Handle) MiddlePriceForPeriod(c *gin.Context) {
 	start := c.PostForm("start")
 	end := c.PostForm("end")
 
-	price, err := h.Service.FindMiddlePriceForPeriod(c.Request.Context(), roomNumber, start, end)
+	price, err := h.TransactionalService.FindMiddlePriceForPeriod(c.Request.Context(), roomNumber, start, end)
 	if err != nil {
 		zap.L().Error("FindMiddlePriceForPeriod", zap.Error(err))
 		c.String(http.StatusInternalServerError, err.Error())

@@ -23,7 +23,7 @@ func (h *Handle) Report(c *gin.Context) {
 		return
 	}
 
-	fileData, err := h.Service.CreateReport(c.Request.Context(), request.RoomNumber, request.Start, request.End)
+	fileData, err := h.TransactionalService.CreateReport(c.Request.Context(), request.RoomNumber, request.Start, request.End)
 	if err != nil {
 		zap.L().Error("CreateReport", zap.Error(err))
 		c.String(http.StatusInternalServerError, err.Error())
@@ -73,7 +73,7 @@ func (h *Handle) MiddlePriceForPeriodReport(c *gin.Context) {
 		return
 	}
 
-	priceMap, err := h.Service.FindMiddlePriceForPeriodReport(c.Request.Context(), apartments, start, end)
+	priceMap, err := h.TransactionalService.FindMiddlePriceForPeriodReport(c.Request.Context(), apartments, start, end)
 	if err != nil {
 		zap.L().Error("FindMiddlePriceForPeriod", zap.Error(err))
 		c.String(http.StatusInternalServerError, err.Error())
@@ -104,7 +104,7 @@ func (h *Handle) TotalPriceForPeriodReport(c *gin.Context) {
 		return
 	}
 
-	priceMap, err := h.Service.FindTotalPriceForPeriodReport(c.Request.Context(), apartments, start, end)
+	priceMap, err := h.TransactionalService.FindTotalPriceForPeriodReport(c.Request.Context(), apartments, start, end)
 	if err != nil {
 		zap.L().Error("TotalPriceForPeriodReport", zap.Error(err))
 		c.String(http.StatusInternalServerError, err.Error())

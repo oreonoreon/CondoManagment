@@ -12,9 +12,10 @@ import (
 )
 
 func (db *Repository) GetReservationByID(ctx context.Context, id int) (*entities.Reservation, error) {
+	runner := getRunner(ctx, db.PostgreSQL)
 	reservation := new(entities.Reservation)
 	query := "Select * FROM Reservations WHERE id=$1"
-	dbRow := db.PostgreSQL.QueryRowContext(ctx, query, id)
+	dbRow := runner.QueryRowContext(ctx, query, id)
 	err := dbRow.Scan(
 		&reservation.Oid,
 		&reservation.RoomNumber,
@@ -38,10 +39,12 @@ func (db *Repository) GetReservationByID(ctx context.Context, id int) (*entities
 	}
 	return reservation, nil
 }
+
 func (db *Repository) Delete(ctx context.Context, id int) (*entities.Reservation, error) {
+	runner := getRunner(ctx, db.PostgreSQL)
 	reservation := new(entities.Reservation)
 	query := "DELETE FROM Reservations WHERE id=$1 Returning *"
-	dbRow := db.PostgreSQL.QueryRowContext(ctx, query, id)
+	dbRow := runner.QueryRowContext(ctx, query, id)
 	err := dbRow.Scan(
 		&reservation.Oid,
 		&reservation.RoomNumber,
@@ -67,7 +70,7 @@ func (db *Repository) Delete(ctx context.Context, id int) (*entities.Reservation
 }
 
 func (db *Repository) Create(ctx context.Context, r entities.Reservation) (*entities.Reservation, error) {
-	runner := getRunner(ctx, db.PostgreSQL) // todo такое использование контекста надо переделать или ввести повсеместно
+	runner := getRunner(ctx, db.PostgreSQL)
 	reservation := new(entities.Reservation)
 
 	query := "INSERT INTO Reservations (" +
@@ -126,8 +129,9 @@ func (db *Repository) Create(ctx context.Context, r entities.Reservation) (*enti
 }
 
 func (db *Repository) Read(ctx context.Context, checkin, checkout string) ([]entities.Reservation, error) {
+	runner := getRunner(ctx, db.PostgreSQL)
 	reservations := make([]entities.Reservation, 0, 0)
-	queryContext, err := db.PostgreSQL.QueryContext(ctx,
+	queryContext, err := runner.QueryContext(ctx,
 		"Select * from Reservations where (check_in, check_out) OVERLAPS ($1, $2)",
 		checkin, checkout)
 	if err != nil {
@@ -148,8 +152,9 @@ func (db *Repository) Read(ctx context.Context, checkin, checkout string) ([]ent
 }
 
 func (db *Repository) ReadALLByRoomNumber(ctx context.Context, roomNumber string) ([]entities.Reservation, error) {
+	runner := getRunner(ctx, db.PostgreSQL)
 	reservations := make([]entities.Reservation, 0, 0)
-	queryContext, err := db.PostgreSQL.QueryContext(ctx,
+	queryContext, err := runner.QueryContext(ctx,
 		"Select * from Reservations where room_number=$1 ORDER BY check_in",
 		roomNumber)
 	if err != nil {
@@ -184,8 +189,9 @@ func (db *Repository) ReadALLByRoomNumber(ctx context.Context, roomNumber string
 }
 
 func (db *Repository) ReadWithRoomNumber(ctx context.Context, roomNumber string, checkin, checkout time.Time) ([]entities.Reservation, error) {
+	runner := getRunner(ctx, db.PostgreSQL)
 	reservations := make([]entities.Reservation, 0, 0)
-	queryContext, err := db.PostgreSQL.QueryContext(ctx,
+	queryContext, err := runner.QueryContext(ctx,
 		"Select * from Reservations where (check_in, check_out) OVERLAPS ($1, $2) AND room_number=$3 ORDER BY check_in",
 		checkin, checkout, roomNumber)
 	if err != nil {
@@ -220,14 +226,10 @@ func (db *Repository) ReadWithRoomNumber(ctx context.Context, roomNumber string,
 }
 
 func (db *Repository) UpdateReservation(ctx context.Context, r entities.Reservation) (*entities.Reservation, error) {
-	tx := From(ctx)
-	if tx == nil {
-		return nil, errors.New("context doesn't contain transaction") // todo решить делать так все запросы или через getRunner
-	}
-
+	runner := getRunner(ctx, db.PostgreSQL)
 	reservation := new(entities.Reservation)
 	query := "UPDATE Reservations SET room_number=$2, guest_id=$3, check_in=$4, check_out=$5, price=$6, cleaning_price=$7,electricity_and_water_payment=$8,adult=$9,children=$10,description=$11, days=$12,price_for_night=$13 where id=$1 Returning *"
-	queryContext := tx.QueryRowContext(ctx, query,
+	queryContext := runner.QueryRowContext(ctx, query,
 		r.Oid, r.RoomNumber, r.GuestID, r.CheckIn, r.CheckOut, r.Price, r.CleaningPrice, r.ElectricityAndWaterPayment, r.Adult, r.Children, r.Description, r.Days, r.PriceForOneNight)
 
 	err := queryContext.Scan(
