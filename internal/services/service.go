@@ -81,6 +81,7 @@ func (s *Service) UpdateBooking(ctx context.Context, booking entities.Booking) (
 
 	booking.Reservation.GuestID = updateGuest.GuestID
 
+	booking.Reservation = applyDefaultTimes(booking.Reservation)
 	booking.Reservation = prepareDaysAndPriceForNight(booking.Reservation)
 
 	updateReservation, err := s.storageReservation.UpdateReservation(ctx, booking.Reservation)
@@ -136,6 +137,7 @@ func (s *Service) CreateReservation(ctx context.Context, reservation entities.Re
 	}
 
 	//запишем новое бронирование в бд
+	reservation = applyDefaultTimes(reservation)
 	if reservation.Days == 0 {
 		res := prepareDaysAndPriceForNight(reservation)
 		reservation = res
@@ -152,7 +154,35 @@ func (s *Service) CreateReservation(ctx context.Context, reservation entities.Re
 	return r, nil
 }
 
-// todo что бы не считать в коде стоимость ночи и количество дней нужно отдать это на вычеслении бд (раньше это делала бд в вычесляемых столбцах но при удаление контейнера почему всё пропало хотя и потключены volumes)
+// applyDefaultTimes устанавливает время по умолчанию, если оно не указано (00:00:00):
+// check_in → 13:00:00, check_out → 11:00:00
+func applyDefaultTimes(reservation entities.Reservation) entities.Reservation {
+	h, m, s := reservation.CheckIn.Clock()
+	if h == 0 && m == 0 && s == 0 {
+		reservation.CheckIn = time.Date(
+			reservation.CheckIn.Year(),
+			reservation.CheckIn.Month(),
+			reservation.CheckIn.Day(),
+			13, 0, 0, 0,
+			reservation.CheckIn.Location(),
+		)
+	}
+
+	h, m, s = reservation.CheckOut.Clock()
+	if h == 0 && m == 0 && s == 0 {
+		reservation.CheckOut = time.Date(
+			reservation.CheckOut.Year(),
+			reservation.CheckOut.Month(),
+			reservation.CheckOut.Day(),
+			11, 0, 0, 0,
+			reservation.CheckOut.Location(),
+		)
+	}
+
+	return reservation
+}
+
+// что бы не считать в коде стоимость ночи и количество дней нужно отдать это на вычеслении бд (раньше это делала бд в вычесляемых столбцах но при удаление контейнера почему всё пропало хотя и потключены volumes)
 func prepareDaysAndPriceForNight(reservation entities.Reservation) entities.Reservation {
 	reservation = countDays(reservation)
 
