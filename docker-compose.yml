@@ -24,7 +24,7 @@ services:
       - postgres
 
   postgres:
-    image: postgres:11
+    image: postgres:17
     container_name: postqresql-reservation
     ports:
       - 5432:5432
@@ -32,7 +32,7 @@ services:
     environment:
       - POSTGRES_USER=oreonoreon
       - POSTGRES_PASSWORD=12345
-      - POSTGRES_DB=gl
+      - POSTGRES_DB=postgres
     volumes:
       - postqresql-reservation-data:/var/lib/postgresql/data
 
