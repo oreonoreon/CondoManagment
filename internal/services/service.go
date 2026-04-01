@@ -157,8 +157,10 @@ func (s *Service) CreateReservation(ctx context.Context, reservation entities.Re
 // applyDefaultTimes устанавливает время по умолчанию, если оно не указано (00:00:00):
 // check_in → 13:00:00, check_out → 11:00:00
 func applyDefaultTimes(reservation entities.Reservation) entities.Reservation {
-	h, m, s := reservation.CheckIn.Clock()
-	if h == 0 && m == 0 && s == 0 {
+	hIn, mIn, sIn := reservation.CheckIn.Clock()
+	hOut, mOut, sOut := reservation.CheckOut.Clock()
+
+	if hIn == 0 && mIn == 0 && sIn == 0 && hOut == 0 && mOut == 0 && sOut == 0 {
 		reservation.CheckIn = time.Date(
 			reservation.CheckIn.Year(),
 			reservation.CheckIn.Month(),
@@ -166,10 +168,6 @@ func applyDefaultTimes(reservation entities.Reservation) entities.Reservation {
 			13, 0, 0, 0,
 			reservation.CheckIn.Location(),
 		)
-	}
-
-	h, m, s = reservation.CheckOut.Clock()
-	if h == 0 && m == 0 && s == 0 {
 		reservation.CheckOut = time.Date(
 			reservation.CheckOut.Year(),
 			reservation.CheckOut.Month(),
