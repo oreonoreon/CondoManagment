@@ -19,7 +19,6 @@ type Service struct {
 }
 
 type StorageReservation interface {
-	//BeginTx(ctx context.Context, opts *sql.TxOptions) (context.Context, *sql.Tx, error)
 	UpdateReservation(ctx context.Context, r entities.Reservation) (*entities.Reservation, error)
 	Create(ctx context.Context, r entities.Reservation) (*entities.Reservation, error)
 	ReadALLByRoomNumber(ctx context.Context, roomNumber string) ([]entities.Reservation, error)
@@ -42,77 +41,6 @@ func NewService(storage StorageReservation, storageGuest StorageGuest) *Service 
 		storageGuest:       storageGuest,
 	}
 }
-
-//func (s *Service) UpdateBooking(ctx context.Context, booking entities.Booking) (*entities.Booking, error) {
-//	// 1) Стартуем транзакцию и привязываем её к контексту
-//	ctx, tx, err := s.storageReservation.BeginTx(ctx, &sql.TxOptions{
-//		Isolation: sql.LevelReadCommitted, // достаточно для этого сценария
-//		ReadOnly:  false,
-//	})
-//	if err != nil {
-//		return nil, err
-//	}
-//	// Всегда откатываем, если не было коммита (дефер безопасен)
-//	defer tx.Rollback()
-//
-//	// 2) Все дальнейшие вызовы стораджей идут с тем же ctx (внутри они увидят tx)
-//	r, err := s.storageReservation.GetReservationByID(ctx, booking.Reservation.Oid)
-//	if err != nil {
-//		zap.L().Error("UpdateBooking", zap.Error(err))
-//		return nil, err
-//	}
-//	if r == nil {
-//		zap.L().Error("UpdateBooking", zap.Error(erro.ErrEmptyResultFromReservation))
-//		return nil, erro.ErrEmptyResultFromReservation
-//	}
-//
-//	g, err := s.storageGuest.ReadGuest(ctx, r.GuestID)
-//	if err != nil {
-//		zap.L().Error("UpdateBooking", zap.Error(err))
-//		return nil, err
-//	}
-//	if g == nil {
-//		zap.L().Error("UpdateBooking", zap.Error(erro.ErrReservationHasGuestUUIDbutGuestNotFound))
-//		return nil, erro.ErrReservationHasGuestUUIDbutGuestNotFound
-//	}
-//
-//	var updatedGuest *entities.Guest
-//	if booking.Guest.Phone != g.Phone {
-//		updatedGuest, err = s.CreateGuest(ctx, booking.Guest)
-//		if err != nil {
-//			zap.L().Error("UpdateBooking", zap.Error(err))
-//			return nil, err // транзакция откатится по defer
-//		}
-//	} else {
-//		booking.Guest.GuestID = g.GuestID
-//		updatedGuest, err = s.storageGuest.UpdateGuest(ctx, booking.Guest)
-//		if err != nil {
-//			zap.L().Error("UpdateBooking", zap.Error(err))
-//			return nil, err // транзакция откатится
-//		}
-//	}
-//
-//	booking.Reservation.GuestID = updatedGuest.GuestID
-//	booking.Reservation = prepareDaysAndPriceForNight(booking.Reservation)
-//
-//	updateReservation, err := s.storageReservation.UpdateReservation(ctx, booking.Reservation)
-//	if err != nil {
-//		// здесь может прилететь 23P01 (пересечение дат), и мы просто вернём ошибку — defer сделает Rollback
-//		zap.L().Error("UpdateBooking", zap.Error(err))
-//		return nil, err
-//	}
-//
-//	b := entities.Booking{
-//		Guest:       *updatedGuest,
-//		Reservation: *updateReservation,
-//	}
-//
-//	// 3) Фиксируем транзакцию
-//	if err := tx.Commit(); err != nil {
-//		return nil, err
-//	}
-//	return &b, nil
-//}
 
 func (s *Service) UpdateBooking(ctx context.Context, booking entities.Booking) (*entities.Booking, error) {
 	r, err := s.storageReservation.GetReservationByID(ctx, booking.Reservation.Oid)
@@ -153,6 +81,7 @@ func (s *Service) UpdateBooking(ctx context.Context, booking entities.Booking) (
 
 	booking.Reservation.GuestID = updateGuest.GuestID
 
+	booking.Reservation = applyDefaultTimes(booking.Reservation)
 	booking.Reservation = prepareDaysAndPriceForNight(booking.Reservation)
 
 	updateReservation, err := s.storageReservation.UpdateReservation(ctx, booking.Reservation)
@@ -208,6 +137,7 @@ func (s *Service) CreateReservation(ctx context.Context, reservation entities.Re
 	}
 
 	//запишем новое бронирование в бд
+	reservation = applyDefaultTimes(reservation)
 	if reservation.Days == 0 {
 		res := prepareDaysAndPriceForNight(reservation)
 		reservation = res
@@ -224,7 +154,33 @@ func (s *Service) CreateReservation(ctx context.Context, reservation entities.Re
 	return r, nil
 }
 
-// todo что бы не считать в коде стоимость ночи и количество дней нужно отдать это на вычеслении бд (раньше это делала бд в вычесляемых столбцах но при удаление контейнера почему всё пропало хотя и потключены volumes)
+// applyDefaultTimes устанавливает время по умолчанию, если оно не указано (00:00:00):
+// check_in → 13:00:00, check_out → 11:00:00
+func applyDefaultTimes(reservation entities.Reservation) entities.Reservation {
+	hIn, mIn, sIn := reservation.CheckIn.Clock()
+	hOut, mOut, sOut := reservation.CheckOut.Clock()
+
+	if hIn == 0 && mIn == 0 && sIn == 0 && hOut == 0 && mOut == 0 && sOut == 0 {
+		reservation.CheckIn = time.Date(
+			reservation.CheckIn.Year(),
+			reservation.CheckIn.Month(),
+			reservation.CheckIn.Day(),
+			13, 0, 0, 0,
+			reservation.CheckIn.Location(),
+		)
+		reservation.CheckOut = time.Date(
+			reservation.CheckOut.Year(),
+			reservation.CheckOut.Month(),
+			reservation.CheckOut.Day(),
+			11, 0, 0, 0,
+			reservation.CheckOut.Location(),
+		)
+	}
+
+	return reservation
+}
+
+// что бы не считать в коде стоимость ночи и количество дней нужно отдать это на вычеслении бд (раньше это делала бд в вычесляемых столбцах но при удаление контейнера почему всё пропало хотя и потключены volumes)
 func prepareDaysAndPriceForNight(reservation entities.Reservation) entities.Reservation {
 	reservation = countDays(reservation)
 
@@ -318,21 +274,21 @@ func (s *Service) CreateReservation1(ctx context.Context, booking entities.Booki
 }
 
 // CreateReport Создание репорта для собственника
-func (s *Service) CreateReport(ctx context.Context, roomNumber string, startPeriod string, endPeriod string) (string, error) {
+func (s *Service) CreateReport(ctx context.Context, roomNumber string, startPeriod string, endPeriod string) ([]byte, error) {
 	bookings, err := s.GetBooking(ctx, roomNumber, startPeriod, endPeriod)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if len(bookings) == 0 {
-		return "", erro.ErrSliceOfBookingIsEmpty
+		return nil, erro.ErrSliceOfBookingIsEmpty
 	}
 
-	path, err := report.ReportForOwner(bookings)
+	report, err := report.ReportForOwner(bookings)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return path, nil
+	return report, nil
 }
 
 func (s *Service) GetBookingALLForApartmentALL(ctx context.Context, roomNumbers []string) ([]entities.Booking, error) {

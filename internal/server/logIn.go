@@ -23,13 +23,13 @@ func (h *Handle) CreateUser(c *gin.Context) {
 
 	user, err := h.ServiceUsers.PrepareToCreateUser(u.Username, u.Password, u.Phone)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, err) //todo сделать что нибудь с ошибкой а не передавать nil
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	createdUser, err := h.ServiceUsers.CreateUser(c.Request.Context(), *user)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, err) //todo сделать что нибудь с ошибкой а не передавать nil
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -40,7 +40,6 @@ func (h *Handle) CreateUser(c *gin.Context) {
 }
 
 func (h *Handle) LoginHandler(c *gin.Context) {
-
 	var creds struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
@@ -55,11 +54,11 @@ func (h *Handle) LoginHandler(c *gin.Context) {
 		if errors.Is(err, erro.ErrWrongCreds) {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 			return
-		} else {
-			c.JSON(http.StatusInternalServerError, nil) //todo сделать что нибудь с ошибкой а не передавать nil
 		}
-
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
 	}
+
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(creds.Password)); err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
 		return
@@ -67,12 +66,15 @@ func (h *Handle) LoginHandler(c *gin.Context) {
 
 	session := sessions.Default(c)
 	session.Set("userID", user.ID.String())
+	session.Set("role", user.Role)
+
 	if err := session.Save(); err != nil {
-		zap.L().Error("LoginHandler", zap.Error(err))
+		zap.L().Error("LoginHandler: failed to save session", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not save session"})
 		return
 	}
 
+	zap.L().Info("Session saved successfully", zap.String("username", creds.Username))
 	c.JSON(http.StatusOK, gin.H{"message": "logged in"})
 }
 
@@ -80,19 +82,27 @@ func (h *Handle) LogoutHandler(c *gin.Context) {
 	session := sessions.Default(c)
 	session.Clear()
 
-	// Принудительно истекаем cookie
-	session.Options(sessions.Options{
+	// ИСПРАВЛЕНИЕ: используем те же настройки, что и при создании
+	cookieOptions := sessions.Options{
 		Path:     "/",
-		MaxAge:   -1, // <— важное место
+		MaxAge:   -1, // удаляем cookie
 		HttpOnly: true,
-		Secure:   false, // в проде true для https
-	})
+		Secure:   h.cfg.IsProduction,
+		SameSite: http.SameSiteLaxMode,
+	}
+
+	if h.cfg.IsProduction {
+		cookieOptions.SameSite = http.SameSiteNoneMode
+	}
+
+	session.Options(cookieOptions)
 
 	if err := session.Save(); err != nil {
-		zap.L().Error("LogoutHandler", zap.Error(err))
+		zap.L().Error("LogoutHandler: failed to save session", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "logout failed"})
 		return
 	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "logged out"})
 }
 
@@ -100,12 +110,16 @@ func SessionAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		session := sessions.Default(c)
 		uid := session.Get("userID")
+		role := session.Get("role")
+
 		if uid == nil {
+			zap.L().Warn("Unauthorized access attempt", zap.String("path", c.Request.URL.Path))
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
 			return
 		}
-		// Можно дополнительно загрузить пользователя из БД и положить в контекст
+
 		c.Set("userID", uid)
+		c.Set("role", role)
 		c.Next()
 	}
 }

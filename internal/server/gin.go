@@ -1,113 +1,113 @@
 package server
 
 import (
+	"awesomeProject/internal/config"
 	"awesomeProject/internal/entities"
-	"awesomeProject/internal/repo"
 	"awesomeProject/internal/services"
 	"database/sql"
 	"errors"
+	"github.com/antonlindstrom/pgstore"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-contrib/sessions"
-	"github.com/gin-contrib/sessions/postgres"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 	"net/http"
-	"os"
 	"strconv"
 	"time"
 )
 
+type SpecialStore struct {
+	*pgstore.PGStore
+}
+
+func (s SpecialStore) Options(options sessions.Options) {
+	s.PGStore.Options = options.ToGorillaOptions()
+}
+
 func Gin(h Handle) {
 	router := gin.Default()
 
-	allowOrigin, ok := os.LookupEnv("FRONT_URL") //todo вынести все env в подобающее место
-	if !ok {
-		allowOrigin = "*"
-	}
-
-	//---------------------------
+	// CORS конфигурация
 	router.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{allowOrigin}, // или "*" для всех
+		AllowOrigins:     []string{h.cfg.FrontURL},
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Accept"},
-		ExposeHeaders:    []string{"Content-Length"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
+		ExposeHeaders:    []string{"Content-Length", "Set-Cookie"},
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
 	}))
-	//---------------------------
 
-	router.LoadHTMLGlob("html/*.html") // шаблоны
+	router.LoadHTMLGlob("html/*.html")
 
-	db, err := sql.Open("postgres", repo.DataSourceName) //todo не хорошо что тут используем пакет repo
+	//------------------ Всё это неплохо бы вынести --------------
+	db, err := sql.Open("postgres", h.cfg.DatabaseDSN) //todo не хорошо что здесь идёт повторное открытие соединения с бд
 	if err != nil {
 		panic(err)
 	}
 
-	store, err := postgres.NewStore(db, []byte("везде жопа лысого ПОПУГАЯ!"))
+	//store, err := postgres.NewStore(db, []byte("везде жопа лысого ПОПУГАЯ!"))
+	//if err != nil {
+	//	panic(err)
+	//}
+
+	notSpesialStore, err := pgstore.NewPGStoreFromPool(db, []byte("везде жопа лысого ПОПУГАЯ!"))
 	if err != nil {
 		panic(err)
 	}
 
-	store.Options(sessions.Options{
+	defer notSpesialStore.StopCleanup(notSpesialStore.Cleanup(time.Hour * 24))
+
+	store := SpecialStore{notSpesialStore}
+	//-----------------------------------------------------------------------------
+
+	//настройки cookies в зависимости от окружения
+	cookieOptions := sessions.Options{
 		Path:     "/",
-		MaxAge:   60 * 60 * 24, // день
+		MaxAge:   60 * 60 * 24, // 24 часа
 		HttpOnly: true,
-		Secure:   true, // в проде true при https
-	})
+		Secure:   h.cfg.IsProduction,   // true только в production с HTTPS
+		SameSite: http.SameSiteLaxMode, // для разработки Lax, для production можно None
+	}
+
+	// Если production и используется cross-origin, нужен SameSite=None
+	if h.cfg.IsProduction {
+		cookieOptions.SameSite = http.SameSiteNoneMode
+	}
+
+	store.Options(cookieOptions)
 	router.Use(sessions.Sessions("sess", store))
 
 	router.POST("/login", h.LoginHandler)
 
-	// Защищённые маршруты: сначала сессия, потом authorizer
+	// Защищённые маршруты
 	api := router.Group("/calendar")
 	api.Use(SessionAuthMiddleware())
 	{
 		api.POST("/createUser", h.CreateUser)
-
 		api.POST("/logout", h.LogoutHandler)
-
 		api.GET("/sync", h.SynchroniseBookings)
 		api.POST("/sync", h.SynchroniseBookings)
-
 		api.GET("/ExcelRes", h.ExcelBookings)
 		api.POST("/ExcelRes", h.ExcelBookings)
-
 		api.GET("/middleprice", h.MiddlePriceForPeriod)
 		api.POST("/middleprice", h.MiddlePriceForPeriod)
-
 		api.GET("/middlepriceReport", h.MiddlePriceForPeriodReport)
 		api.POST("/middlepriceReport", h.MiddlePriceForPeriodReport)
-
 		api.GET("/totalpriceReport", h.TotalPriceForPeriodReport)
 		api.POST("/totalpriceReport", h.TotalPriceForPeriodReport)
-
-		api.GET("/report", h.Report)
 		api.POST("/report", h.Report)
-
 		api.POST("/r", h.BookingsPost)
 		api.POST("/rall", h.AllBookingsPost)
-
 		api.GET("/r", h.ApartmentsGet)
-
 		api.PATCH("/updateBooking", h.UpdateBooking)
-
 		api.POST("/createBooking", h.CreateBookingPost)
-
 		api.DELETE("/deleteBooking/:id", h.DeleteBookingByID)
-
 		api.POST("/BnB", h.ScrapBnBPost)
-
 		api.POST("/BnB/locationName", h.ScrapBnBLocationNameUpdate)
-
 		api.POST("/BnB/room", h.ScrapBnbRoomUnderstandableTypePatch)
 	}
-	//router.POST("/BnB", h.ScrapBnBPost)
-	//
-	//router.POST("/BnB/locationName", h.ScrapBnBLocationNameUpdate)
-	//
-	//router.POST("/BnB/room", h.ScrapBnbRoomUnderstandableTypePatch)
 
-	router.Run(":8080") // gin сам управляет тайм-аутами, но можно кастомизировать
+	router.Run(":8080")
 }
 
 type Handle struct {
@@ -118,6 +118,7 @@ type Handle struct {
 	*services.ServiceApartment
 	*services.ServiceBnB
 	*services.ServiceUsers
+	cfg *config.ConfigEnv // добавляем поле конфига
 }
 
 func NewHandle(
@@ -127,7 +128,8 @@ func NewHandle(
 	serviceExcel *services.ServiceExcel,
 	serviceApartment *services.ServiceApartment,
 	servicesBnB *services.ServiceBnB,
-	servicesUsers *services.ServiceUsers) Handle {
+	servicesUsers *services.ServiceUsers,
+	cfg *config.ConfigEnv) Handle {
 	return Handle{
 		serviceReservation,
 		servicesInterface,
@@ -136,6 +138,7 @@ func NewHandle(
 		serviceApartment,
 		servicesBnB,
 		servicesUsers,
+		cfg,
 	}
 }
 
@@ -165,7 +168,7 @@ func (h *Handle) DeleteBookingByID(c *gin.Context) {
 		return
 	}
 
-	reservation, err := h.Service.DeleteReservation(c.Request.Context(), id)
+	reservation, err := h.TransactionalService.DeleteReservation(c.Request.Context(), id)
 	if err != nil {
 		c.String(http.StatusInternalServerError, err.Error())
 		return
@@ -197,9 +200,27 @@ func (h *Handle) CreateBookingPost(c *gin.Context) {
 	c.IndentedJSON(http.StatusCreated, booking)
 }
 
+func getRoleFromContext(c *gin.Context) (string, error) {
+	role, exist := c.Get("role")
+	if !exist {
+		return "", errors.New("no role found in session")
+	}
+	roleStr, ok := role.(string)
+	if !ok {
+		return "", errors.New("invalid role type in session")
+	}
+	return roleStr, nil
+}
+
 // ApartmentsGet request to get names of all appartment
 func (h *Handle) ApartmentsGet(c *gin.Context) {
-	apartments, err := h.ServiceApartment.GetAllApartment(c.Request.Context())
+	roleStr, err := getRoleFromContext(c)
+	if err != nil {
+		c.String(http.StatusUnauthorized, err.Error())
+		return
+	}
+
+	apartments, err := h.ServiceApartment.GetAllApartment(c.Request.Context(), roleStr)
 	if err != nil {
 		c.String(http.StatusInternalServerError, err.Error())
 		return
@@ -221,7 +242,7 @@ func (h *Handle) BookingsPost(c *gin.Context) {
 		return
 	}
 
-	bookings, err := h.Service.GetBookingALLForApartment(c.Request.Context(), request.RoomNumber)
+	bookings, err := h.TransactionalService.GetBookingALLForApartment(c.Request.Context(), request.RoomNumber)
 	if err != nil {
 		c.String(http.StatusInternalServerError, err.Error())
 		return
@@ -244,7 +265,7 @@ func (h *Handle) AllBookingsPost(c *gin.Context) {
 		return
 	}
 
-	bookings, err := h.Service.GetBookingALLForApartmentALL(c.Request.Context(), request.RoomNumbers)
+	bookings, err := h.TransactionalService.GetBookingALLForApartmentALL(c.Request.Context(), request.RoomNumbers)
 	if err != nil {
 		c.String(http.StatusInternalServerError, err.Error())
 		return
@@ -264,7 +285,7 @@ func (h *Handle) MiddlePriceForPeriod(c *gin.Context) {
 	start := c.PostForm("start")
 	end := c.PostForm("end")
 
-	price, err := h.Service.FindMiddlePriceForPeriod(c.Request.Context(), roomNumber, start, end)
+	price, err := h.TransactionalService.FindMiddlePriceForPeriod(c.Request.Context(), roomNumber, start, end)
 	if err != nil {
 		zap.L().Error("FindMiddlePriceForPeriod", zap.Error(err))
 		c.String(http.StatusInternalServerError, err.Error())

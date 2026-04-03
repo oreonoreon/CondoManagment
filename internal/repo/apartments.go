@@ -36,10 +36,11 @@ func (db *Repository) ReadApartment(ctx context.Context, roomNumber string) (*en
 	return apartment, nil
 }
 
-func (db *Repository) ReadApartmentAll(ctx context.Context) ([]entities.Apartment, error) {
+func (db *Repository) ReadApartmentAll(ctx context.Context, role string) ([]entities.Apartment, error) {
 	apartments := make([]entities.Apartment, 0)
 	queryContext, err := db.PostgreSQL.QueryContext(ctx,
-		"Select * from Apartments ORDER BY room_number",
+		"Select id,room_number,description,airbnb_calendar from Apartments where $1 = ANY(access) ORDER BY room_number",
+		role,
 	)
 	if err != nil {
 		return nil, err
