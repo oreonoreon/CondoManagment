@@ -49,10 +49,11 @@ func main() {
 	postgre := repo.NewRepository(db)
 
 	//services
-	serviceReservation := services.NewService(postgre, postgre)
+	serviceReservation := services.NewService(postgre, postgre, postgre)
 	serviceSettings := services.NewServiceSettings(postgre)
+	serviceCleaning := services.NewServiceCleaning(postgre)
 
-	serviceTransaction := services.NewTransactionalService(serviceReservation, postgre)
+	serviceTransaction := services.NewTransactionalService(serviceReservation, serviceCleaning, postgre)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

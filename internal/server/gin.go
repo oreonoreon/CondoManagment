@@ -105,6 +105,18 @@ func Gin(h Handle) {
 		api.POST("/BnB", h.ScrapBnBPost)
 		api.POST("/BnB/locationName", h.ScrapBnBLocationNameUpdate)
 		api.POST("/BnB/room", h.ScrapBnbRoomUnderstandableTypePatch)
+
+		// Bookings by date
+		api.GET("/bookings/check-in/:date", h.GetBookingsByCheckIn)
+		api.GET("/bookings/check-out/:date", h.GetBookingsByCheckOut)
+
+		// Cleaning CRUD
+		api.GET("/cleaning", h.GetAllCleaning)
+		api.GET("/cleaning/date/:date", h.GetCleaningByDate)
+		api.GET("/cleaning/:id", h.GetCleaningByID)
+		api.POST("/cleaning", h.CreateCleaning)
+		api.PATCH("/cleaning/:id", h.UpdateCleaning)
+		api.DELETE("/cleaning/:id", h.DeleteCleaning)
 	}
 
 	router.Run(":8080")

@@ -257,6 +257,60 @@ func (db *Repository) FindBookingByGuestUUID(ctx context.Context, uuid uuid.UUID
 	return nil, nil
 }
 
+func (db *Repository) GetReservationsByCheckIn(ctx context.Context, date time.Time) ([]entities.Reservation, error) {
+	runner := getRunner(ctx, db.PostgreSQL)
+	rows, err := runner.QueryContext(ctx,
+		"SELECT * FROM reservations WHERE DATE(check_in) = $1 ORDER BY check_in",
+		date.Format("2006-01-02"),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	reservations := make([]entities.Reservation, 0)
+	for rows.Next() {
+		var r entities.Reservation
+		if err := rows.Scan(
+			&r.Oid, &r.RoomNumber, &r.GuestID,
+			&r.CheckIn, &r.CheckOut, &r.Price, &r.CleaningPrice,
+			&r.ElectricityAndWaterPayment, &r.Adult, &r.Children,
+			&r.Description, &r.Days, &r.PriceForOneNight,
+		); err != nil {
+			return nil, err
+		}
+		reservations = append(reservations, r)
+	}
+	return reservations, rows.Err()
+}
+
+func (db *Repository) GetReservationsByCheckOut(ctx context.Context, date time.Time) ([]entities.Reservation, error) {
+	runner := getRunner(ctx, db.PostgreSQL)
+	rows, err := runner.QueryContext(ctx,
+		"SELECT * FROM reservations WHERE DATE(check_out) = $1 ORDER BY check_out",
+		date.Format("2006-01-02"),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	reservations := make([]entities.Reservation, 0)
+	for rows.Next() {
+		var r entities.Reservation
+		if err := rows.Scan(
+			&r.Oid, &r.RoomNumber, &r.GuestID,
+			&r.CheckIn, &r.CheckOut, &r.Price, &r.CleaningPrice,
+			&r.ElectricityAndWaterPayment, &r.Adult, &r.Children,
+			&r.Description, &r.Days, &r.PriceForOneNight,
+		); err != nil {
+			return nil, err
+		}
+		reservations = append(reservations, r)
+	}
+	return reservations, rows.Err()
+}
+
 // Ошибки Postgres → доменные
 func translatePQ(err error) error {
 	var pqe *pq.Error

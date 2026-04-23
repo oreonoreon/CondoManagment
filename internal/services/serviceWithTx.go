@@ -3,11 +3,13 @@ package services
 import (
 	"awesomeProject/internal/entities"
 	"context"
+	"time"
 )
 
 type TransactionalService struct {
-	serviceInterface ServiceInterface
-	txManager        TransactionManager
+	serviceInterface         ServiceInterface
+	cleaningServiceInterface CleaningServiceInterface
+	txManager                TransactionManager
 }
 
 type ServiceInterface interface {
@@ -27,16 +29,28 @@ type ServiceInterface interface {
 	FindMiddlePriceForPeriodReport(ctx context.Context, apartments []entities.Apartment, startPeriod, endPeriod string) (map[string]int, error)
 	FindMiddlePriceForPeriod(ctx context.Context, roomNumber string, startPeriod, endPeriod string) (int, error)
 	FindTotalPriceForPeriod(ctx context.Context, roomNumber, startPeriod, endPeriod string) (int, int, error)
+	GetBookingByCheckIn(ctx context.Context, date time.Time) ([]entities.Booking, error)
+	GetBookingByCheckOut(ctx context.Context, date time.Time) ([]entities.Booking, error)
 }
 
 type TransactionManager interface {
 	WithTransaction(ctx context.Context, fn func(context.Context) error) error
 }
 
-func NewTransactionalService(serviceInterface ServiceInterface, txManager TransactionManager) *TransactionalService {
+type CleaningServiceInterface interface {
+	CreateCleaningManual(ctx context.Context, c entities.Cleaning) (*entities.Cleaning, error)
+	UpdateCleaning(ctx context.Context, c entities.Cleaning) (*entities.Cleaning, error)
+	DeleteCleaning(ctx context.Context, id int) (*entities.Cleaning, error)
+	GetCleaningByID(ctx context.Context, id int) (*entities.Cleaning, error)
+	GetAllCleaning(ctx context.Context) ([]entities.Cleaning, error)
+	GetCleaningByDate(ctx context.Context, date time.Time) ([]entities.Cleaning, error)
+}
+
+func NewTransactionalService(serviceInterface ServiceInterface, cleaningServiceInterface CleaningServiceInterface, txManager TransactionManager) *TransactionalService {
 	return &TransactionalService{
-		serviceInterface: serviceInterface,
-		txManager:        txManager,
+		serviceInterface:         serviceInterface,
+		cleaningServiceInterface: cleaningServiceInterface,
+		txManager:                txManager,
 	}
 }
 
@@ -279,4 +293,110 @@ func (ts *TransactionalService) FindTotalPriceForPeriod(ctx context.Context, roo
 		return 0, 0, err
 	}
 	return result1, result2, nil
+}
+
+func (ts *TransactionalService) GetBookingByCheckIn(ctx context.Context, date time.Time) ([]entities.Booking, error) {
+	var result []entities.Booking
+	var resultErr error
+	err := ts.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		result, resultErr = ts.serviceInterface.GetBookingByCheckIn(ctx, date)
+		return resultErr
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (ts *TransactionalService) GetBookingByCheckOut(ctx context.Context, date time.Time) ([]entities.Booking, error) {
+	var result []entities.Booking
+	var resultErr error
+	err := ts.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		result, resultErr = ts.serviceInterface.GetBookingByCheckOut(ctx, date)
+		return resultErr
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// ------- Cleaning (через транзакцию) -------
+
+func (ts *TransactionalService) CreateCleaningManual(ctx context.Context, c entities.Cleaning) (*entities.Cleaning, error) {
+	var result *entities.Cleaning
+	var resultErr error
+	err := ts.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		result, resultErr = ts.cleaningServiceInterface.CreateCleaningManual(ctx, c)
+		return resultErr
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (ts *TransactionalService) UpdateCleaning(ctx context.Context, c entities.Cleaning) (*entities.Cleaning, error) {
+	var result *entities.Cleaning
+	var resultErr error
+	err := ts.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		result, resultErr = ts.cleaningServiceInterface.UpdateCleaning(ctx, c)
+		return resultErr
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (ts *TransactionalService) DeleteCleaning(ctx context.Context, id int) (*entities.Cleaning, error) {
+	var result *entities.Cleaning
+	var resultErr error
+	err := ts.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		result, resultErr = ts.cleaningServiceInterface.DeleteCleaning(ctx, id)
+		return resultErr
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (ts *TransactionalService) GetCleaningByID(ctx context.Context, id int) (*entities.Cleaning, error) {
+	var result *entities.Cleaning
+	var resultErr error
+	err := ts.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		result, resultErr = ts.cleaningServiceInterface.GetCleaningByID(ctx, id)
+		return resultErr
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (ts *TransactionalService) GetAllCleaning(ctx context.Context) ([]entities.Cleaning, error) {
+	var result []entities.Cleaning
+	var resultErr error
+	err := ts.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		result, resultErr = ts.cleaningServiceInterface.GetAllCleaning(ctx)
+		return resultErr
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (ts *TransactionalService) GetCleaningByDate(ctx context.Context, date time.Time) ([]entities.Cleaning, error) {
+	var result []entities.Cleaning
+	var resultErr error
+	err := ts.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		result, resultErr = ts.cleaningServiceInterface.GetCleaningByDate(ctx, date)
+		return resultErr
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }

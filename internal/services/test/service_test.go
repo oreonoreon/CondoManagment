@@ -58,6 +58,15 @@ func (m *MockStorageGuest) ReadGuest(ctx context.Context, guestID uuid.UUID) (*e
 	return nil, nil
 }
 
+// --- Mock для StorageCleaning ---
+type MockStorageCleaning struct {
+	mock.Mock
+}
+
+func (m *MockStorageCleaning) CreateCleaning(ctx context.Context, c entities.Cleaning) (*entities.Cleaning, error) {
+	return nil, nil
+}
+
 func TestFindMiddlePriceForPeriod_CasesIndividually(t *testing.T) {
 	type testCase struct {
 		name         string
@@ -164,7 +173,8 @@ func TestFindMiddlePriceForPeriod_CasesIndividually(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mockRes := new(MockStorageReservation)
 			mockGuest := new(MockStorageGuest)
-			s := services.NewService(mockRes, mockGuest)
+			mockCleaning := new(MockStorageCleaning)
+			s := services.NewService(mockRes, mockGuest, mockCleaning)
 
 			mockRes.On("ReadWithRoomNumber", mock.Anything, "101", start, end).
 				Return(tt.bookings, nil)
