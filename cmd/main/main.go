@@ -49,7 +49,8 @@ func main() {
 	postgre := repo.NewRepository(db)
 
 	//services
-	serviceReservation := services.NewService(postgre, postgre, postgre)
+	serviceReservationInfo := services.NewServiceReservationInfo(postgre)
+	serviceReservation := services.NewService(postgre, postgre, postgre, *serviceReservationInfo)
 	serviceSettings := services.NewServiceSettings(postgre)
 	serviceCleaning := services.NewServiceCleaning(postgre)
 

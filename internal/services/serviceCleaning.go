@@ -18,6 +18,7 @@ type StorageCleaningRepo interface {
 	GetCleaningByID(ctx context.Context, id int) (*entities.Cleaning, error)
 	GetAllCleaning(ctx context.Context) ([]entities.Cleaning, error)
 	GetCleaningByDate(ctx context.Context, date time.Time) ([]entities.Cleaning, error)
+	GetCleaningByReservationID(ctx context.Context, reservationID int) (*entities.Cleaning, error)
 }
 
 func NewServiceCleaning(storage StorageCleaningRepo) *ServiceCleaning {
@@ -76,4 +77,30 @@ func (s *ServiceCleaning) GetCleaningByDate(ctx context.Context, date time.Time)
 		return nil, err
 	}
 	return result, nil
+}
+
+// UpdateCleaningByReservation обновляет связанную запись уборки при изменении бронирования.
+// Обновляются только поля, синхронизируемые с резервацией: cleaning_time, room, cleaning_price.
+// Остальные поля (laundry_price, agent_name, description, paid) остаются нетронутыми.
+func (s *ServiceCleaning) UpdateCleaningByReservation(ctx context.Context, reservationID int, checkOut time.Time, room string, cleaningPrice int) error {
+	cleaning, err := s.storage.GetCleaningByReservationID(ctx, reservationID)
+	if err != nil {
+		zap.L().Error("UpdateCleaningByReservation: GetCleaningByReservationID", zap.Error(err))
+		return err
+	}
+	if cleaning == nil {
+		// связанной записи нет — ничего не делаем
+		return nil
+	}
+
+	cleaning.CleaningTime = checkOut
+	cleaning.Room = room
+	cleaning.CleaningPrice = cleaningPrice
+
+	_, err = s.storage.UpdateCleaning(ctx, *cleaning)
+	if err != nil {
+		zap.L().Error("UpdateCleaningByReservation: UpdateCleaning", zap.Error(err))
+		return err
+	}
+	return nil
 }

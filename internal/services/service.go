@@ -14,9 +14,10 @@ import (
 )
 
 type Service struct {
-	storageReservation StorageReservation
-	storageGuest       StorageGuest
-	storageCleaning    StorageCleaning
+	storageReservation     StorageReservation
+	storageGuest           StorageGuest
+	storageCleaning        StorageCleaning
+	serviceReservationInfo ServiceReservationInfo
 }
 
 type StorageReservation interface {
@@ -40,13 +41,16 @@ type StorageGuest interface {
 
 type StorageCleaning interface {
 	CreateCleaning(ctx context.Context, c entities.Cleaning) (*entities.Cleaning, error)
+	UpdateCleaning(ctx context.Context, c entities.Cleaning) (*entities.Cleaning, error)
+	GetCleaningByReservationID(ctx context.Context, reservationID int) (*entities.Cleaning, error)
 }
 
-func NewService(storage StorageReservation, storageGuest StorageGuest, storageCleaning StorageCleaning) *Service {
+func NewService(storage StorageReservation, storageGuest StorageGuest, storageCleaning StorageCleaning, svcReservationInfo ServiceReservationInfo) *Service {
 	return &Service{
-		storageReservation: storage,
-		storageGuest:       storageGuest,
-		storageCleaning:    storageCleaning,
+		storageReservation:     storage,
+		storageGuest:           storageGuest,
+		storageCleaning:        storageCleaning,
+		serviceReservationInfo: svcReservationInfo,
 	}
 }
 
@@ -98,6 +102,12 @@ func (s *Service) UpdateBooking(ctx context.Context, booking entities.Booking) (
 		return nil, err
 	}
 
+	// Синхронизируем связанную запись уборки: обновляем время (check_out), комнату и цену уборки.
+	// Поля, которые менеджер заполняет вручную (agent_name, laundry_price, paid и др.), не трогаем.
+	if err = s.syncCleaningAfterReservationUpdate(ctx, updateReservation); err != nil {
+		return nil, err
+	}
+
 	b := entities.Booking{
 		Guest:       *updateGuest,
 		Reservation: *updateReservation,
@@ -132,6 +142,14 @@ func (s *Service) CreateBooking(ctx context.Context, booking entities.Booking) (
 
 	reservation, err := s.CreateReservation(ctx, booking.Reservation)
 	if err != nil {
+		return nil, err
+	}
+
+	// Создаём reservation_info с данными, переданными с фронта
+	booking.ReservationInfo.ReservationID = reservation.Oid
+	_, err = s.serviceReservationInfo.CreateReservationInfo(ctx, booking.ReservationInfo)
+	if err != nil {
+		zap.L().Error("CreateBooking: failed to create reservation_info", zap.Error(err))
 		return nil, err
 	}
 
@@ -562,4 +580,28 @@ func (s *Service) FindTotalPriceForPeriod(ctx context.Context, roomNumber, start
 // helperForMiddlePrice result of t-u in days
 func helperForMiddlePrice(t, u time.Time) int {
 	return int(t.Sub(u).Hours() / 24)
+}
+
+// syncCleaningAfterReservationUpdate обновляет связанную запись уборки после изменения резервации.
+// Если записи уборки нет — ничего не делаем.
+func (s *Service) syncCleaningAfterReservationUpdate(ctx context.Context, r *entities.Reservation) error {
+	cleaning, err := s.storageCleaning.GetCleaningByReservationID(ctx, r.Oid)
+	if err != nil {
+		zap.L().Error("syncCleaningAfterReservationUpdate: GetCleaningByReservationID", zap.Error(err))
+		return err
+	}
+	if cleaning == nil {
+		return nil
+	}
+
+	cleaning.CleaningTime = r.CheckOut
+	cleaning.Room = r.RoomNumber
+	cleaning.CleaningPrice = r.CleaningPrice
+
+	_, err = s.storageCleaning.UpdateCleaning(ctx, *cleaning)
+	if err != nil {
+		zap.L().Error("syncCleaningAfterReservationUpdate: UpdateCleaning", zap.Error(err))
+		return err
+	}
+	return nil
 }

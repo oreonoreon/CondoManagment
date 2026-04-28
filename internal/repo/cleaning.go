@@ -144,3 +144,20 @@ func (db *Repository) GetCleaningByDate(ctx context.Context, date time.Time) ([]
 	}
 	return result, rows.Err()
 }
+
+func (db *Repository) GetCleaningByReservationID(ctx context.Context, reservationID int) (*entities.Cleaning, error) {
+	runner := getRunner(ctx, db.PostgreSQL)
+	result := new(entities.Cleaning)
+
+	query := `SELECT ` + cleaningColumns + ` FROM cleaning WHERE reservation_id=$1`
+
+	row := runner.QueryRowContext(ctx, query, reservationID)
+	err := scanCleaning(row, result)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
