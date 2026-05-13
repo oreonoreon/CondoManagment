@@ -102,6 +102,18 @@ func (s *Service) UpdateBooking(ctx context.Context, booking entities.Booking) (
 		return nil, err
 	}
 
+	//update reservation_info
+	booking.ReservationInfo.PaymentOnCheckin = updateReservation.Price + updateReservation.CleaningPrice - booking.ReservationInfo.Prepayment
+	booking.ReservationInfo.ReservationID = updateReservation.Oid
+	booking.ReservationInfo.ActualCheckIn = updateReservation.CheckIn
+	booking.ReservationInfo.ActualCheckOut = updateReservation.CheckOut
+
+	updateReservationInfo, err := s.serviceReservationInfo.UpdateReservationInfoByReservationID(ctx, booking.ReservationInfo)
+	if err != nil {
+		zap.L().Error("UpdateBooking: failed to update reservation_info", zap.Error(err))
+		return nil, err
+	}
+
 	// Синхронизируем связанную запись уборки: обновляем время (check_out), комнату и цену уборки.
 	// Поля, которые менеджер заполняет вручную (agent_name, laundry_price, paid и др.), не трогаем.
 	if err = s.syncCleaningAfterReservationUpdate(ctx, updateReservation); err != nil {
@@ -109,8 +121,9 @@ func (s *Service) UpdateBooking(ctx context.Context, booking entities.Booking) (
 	}
 
 	b := entities.Booking{
-		Guest:       *updateGuest,
-		Reservation: *updateReservation,
+		Guest:           *updateGuest,
+		Reservation:     *updateReservation,
+		ReservationInfo: *updateReservationInfo,
 	}
 
 	return &b, nil
@@ -147,13 +160,18 @@ func (s *Service) CreateBooking(ctx context.Context, booking entities.Booking) (
 
 	// Создаём reservation_info с данными, переданными с фронта
 	booking.ReservationInfo.ReservationID = reservation.Oid
-	_, err = s.serviceReservationInfo.CreateReservationInfo(ctx, booking.ReservationInfo)
+	booking.ReservationInfo.PaymentOnCheckin = booking.Reservation.Price + booking.Reservation.CleaningPrice - booking.ReservationInfo.Prepayment
+	// Фактическое время заезда/выезда по умолчанию совпадает с договорным
+	booking.ReservationInfo.ActualCheckIn = reservation.CheckIn
+	booking.ReservationInfo.ActualCheckOut = reservation.CheckOut
+
+	info, err := s.serviceReservationInfo.CreateReservationInfo(ctx, booking.ReservationInfo)
 	if err != nil {
 		zap.L().Error("CreateBooking: failed to create reservation_info", zap.Error(err))
 		return nil, err
 	}
 
-	b := entities.Booking{Guest: *guest, Reservation: *reservation}
+	b := entities.Booking{Guest: *guest, Reservation: *reservation, ReservationInfo: *info}
 	return &b, nil
 }
 
@@ -358,13 +376,25 @@ func (s *Service) GetBookingALLForApartment(ctx context.Context, roomNumber stri
 			return nil, err
 		}
 		if guest == nil {
-			zap.L().Error("GetBooking", zap.Error(erro.ErrReservationHasGuestUUIDbutGuestNotFound))
+			zap.L().Error("GetBookingALLForApartment", zap.Error(erro.ErrReservationHasGuestUUIDbutGuestNotFound))
 			return nil, erro.ErrReservationHasGuestUUIDbutGuestNotFound
 		}
-		booking := entities.Booking{
-			Guest:       *guest,
-			Reservation: r,
+
+		rInfo, err := s.serviceReservationInfo.GetReservationInfoByReservationID(ctx, r.Oid)
+		if err != nil {
+			return nil, err
 		}
+		if rInfo == nil {
+			zap.L().Debug("GetBookingALLForApartment: GetReservationInfoByReservationID", zap.Error(erro.ErrEmptyResultFromDB), zap.Int("reservationID", r.Oid))
+			rInfo = new(entities.ReservationInfo)
+		}
+
+		booking := entities.Booking{
+			Guest:           *guest,
+			Reservation:     r,
+			ReservationInfo: *rInfo,
+		}
+
 		bookings = append(bookings, booking)
 	}
 	return bookings, nil
@@ -439,33 +469,45 @@ func (s *Service) GetReservationByPhoneNumber(ctx context.Context, phone string)
 }
 
 func (s *Service) GetBookingByCheckIn(ctx context.Context, date time.Time) ([]entities.Booking, error) {
-	reservations, err := s.storageReservation.GetReservationsByCheckIn(ctx, date)
+	infos, err := s.serviceReservationInfo.GetReservationInfosByActualCheckIn(ctx, date)
 	if err != nil {
 		return nil, err
 	}
-	return s.buildBookings(ctx, reservations)
+	return s.buildBookingsFromReservationInfos(ctx, infos)
 }
 
 func (s *Service) GetBookingByCheckOut(ctx context.Context, date time.Time) ([]entities.Booking, error) {
-	reservations, err := s.storageReservation.GetReservationsByCheckOut(ctx, date)
+	infos, err := s.serviceReservationInfo.GetReservationInfosByActualCheckOut(ctx, date)
 	if err != nil {
 		return nil, err
 	}
-	return s.buildBookings(ctx, reservations)
+	return s.buildBookingsFromReservationInfos(ctx, infos)
 }
 
-func (s *Service) buildBookings(ctx context.Context, reservations []entities.Reservation) ([]entities.Booking, error) {
-	bookings := make([]entities.Booking, 0, len(reservations))
-	for _, r := range reservations {
+// buildBookingsFromReservationInfos собирает []Booking по списку reservation_info:
+// для каждого достаёт резервацию и гостя.
+func (s *Service) buildBookingsFromReservationInfos(ctx context.Context, infos []entities.ReservationInfo) ([]entities.Booking, error) {
+	bookings := make([]entities.Booking, 0, len(infos))
+	for _, ri := range infos {
+		r, err := s.storageReservation.GetReservationByID(ctx, ri.ReservationID)
+		if err != nil {
+			return nil, err
+		}
+		if r == nil {
+			zap.L().Error("buildBookingsFromReservationInfos: reservation not found", zap.Int("reservationID", ri.ReservationID))
+			return nil, erro.ErrEmptyResultFromReservation
+		}
+
 		guest, err := s.storageGuest.ReadGuest(ctx, r.GuestID)
 		if err != nil {
 			return nil, err
 		}
 		if guest == nil {
-			zap.L().Error("buildBookings", zap.Error(erro.ErrReservationHasGuestUUIDbutGuestNotFound))
+			zap.L().Error("buildBookingsFromReservationInfos", zap.Error(erro.ErrReservationHasGuestUUIDbutGuestNotFound))
 			return nil, erro.ErrReservationHasGuestUUIDbutGuestNotFound
 		}
-		bookings = append(bookings, entities.Booking{Guest: *guest, Reservation: r})
+
+		bookings = append(bookings, entities.Booking{Guest: *guest, Reservation: *r, ReservationInfo: ri})
 	}
 	return bookings, nil
 }

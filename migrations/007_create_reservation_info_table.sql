@@ -8,7 +8,8 @@ CREATE TABLE IF NOT EXISTS reservation_info (
     deposit_currency    VARCHAR(10)          DEFAULT 'USD',
     prepayment          INT         NOT NULL DEFAULT 0,
     payment_on_checkin  INT         NOT NULL DEFAULT 0,
-    notes               TEXT                 DEFAULT ''
+    actual_check_in     TIMESTAMP(0) NOT NULL,
+    actual_check_out    TIMESTAMP(0) NOT NULL
 );
 
 -- +migrate Down

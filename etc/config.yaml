@@ -1,7 +1,7 @@
 #YAML
 
   logPath: ./etc/awesomeProject_log.log
-  debugLogLevel: true
+  debugLogLevel: false #true
   sheetConfig:
       path: /mnt/c/Users/F15/Downloads/Календарь Заселения.xlsx
       name: ноя2023-ноя2024
