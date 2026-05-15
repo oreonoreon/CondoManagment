@@ -7,9 +7,10 @@ import (
 )
 
 type TransactionalService struct {
-	serviceInterface         ServiceInterface
-	cleaningServiceInterface CleaningServiceInterface
-	txManager                TransactionManager
+	serviceInterface            ServiceInterface
+	cleaningServiceInterface    CleaningServiceInterface
+	reservationInfoSvcInterface ReservationInfoServiceInterface
+	txManager                   TransactionManager
 }
 
 type ServiceInterface interface {
@@ -37,6 +38,10 @@ type TransactionManager interface {
 	WithTransaction(ctx context.Context, fn func(context.Context) error) error
 }
 
+type ReservationInfoServiceInterface interface {
+	UpdateReservationInfoByID(ctx context.Context, ri entities.ReservationInfo) (*entities.ReservationInfo, error)
+}
+
 type CleaningServiceInterface interface {
 	CreateCleaningManual(ctx context.Context, c entities.Cleaning) (*entities.Cleaning, error)
 	UpdateCleaning(ctx context.Context, c entities.Cleaning) (*entities.Cleaning, error)
@@ -46,11 +51,12 @@ type CleaningServiceInterface interface {
 	GetCleaningByDate(ctx context.Context, date time.Time) ([]entities.Cleaning, error)
 }
 
-func NewTransactionalService(serviceInterface ServiceInterface, cleaningServiceInterface CleaningServiceInterface, txManager TransactionManager) *TransactionalService {
+func NewTransactionalService(serviceInterface ServiceInterface, cleaningServiceInterface CleaningServiceInterface, reservationInfoSvc ReservationInfoServiceInterface, txManager TransactionManager) *TransactionalService {
 	return &TransactionalService{
-		serviceInterface:         serviceInterface,
-		cleaningServiceInterface: cleaningServiceInterface,
-		txManager:                txManager,
+		serviceInterface:            serviceInterface,
+		cleaningServiceInterface:    cleaningServiceInterface,
+		reservationInfoSvcInterface: reservationInfoSvc,
+		txManager:                   txManager,
 	}
 }
 
@@ -393,6 +399,21 @@ func (ts *TransactionalService) GetCleaningByDate(ctx context.Context, date time
 	var resultErr error
 	err := ts.txManager.WithTransaction(ctx, func(ctx context.Context) error {
 		result, resultErr = ts.cleaningServiceInterface.GetCleaningByDate(ctx, date)
+		return resultErr
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// ------- ReservationInfo (через транзакцию) -------
+
+func (ts *TransactionalService) UpdateReservationInfoByID(ctx context.Context, ri entities.ReservationInfo) (*entities.ReservationInfo, error) {
+	var result *entities.ReservationInfo
+	var resultErr error
+	err := ts.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		result, resultErr = ts.reservationInfoSvcInterface.UpdateReservationInfoByID(ctx, ri)
 		return resultErr
 	})
 	if err != nil {

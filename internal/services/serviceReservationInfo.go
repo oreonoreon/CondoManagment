@@ -15,7 +15,7 @@ type StorageReservationInfoRepo interface {
 	CreateReservationInfo(ctx context.Context, ri entities.ReservationInfo) (*entities.ReservationInfo, error)
 	GetReservationInfoByID(ctx context.Context, id int) (*entities.ReservationInfo, error)
 	GetReservationInfoByReservationID(ctx context.Context, reservationID int) (*entities.ReservationInfo, error)
-	UpdateReservationInfo(ctx context.Context, ri entities.ReservationInfo) (*entities.ReservationInfo, error)
+	UpdateReservationInfoByID(ctx context.Context, ri entities.ReservationInfo) (*entities.ReservationInfo, error)
 	UpdateReservationInfoByReservationID(ctx context.Context, ri entities.ReservationInfo) (*entities.ReservationInfo, error)
 	DeleteReservationInfo(ctx context.Context, id int) (*entities.ReservationInfo, error)
 	GetReservationInfosByActualCheckIn(ctx context.Context, date time.Time) ([]entities.ReservationInfo, error)
@@ -53,8 +53,8 @@ func (s *ServiceReservationInfo) GetReservationInfoByReservationID(ctx context.C
 	return result, nil
 }
 
-func (s *ServiceReservationInfo) UpdateReservationInfo(ctx context.Context, ri entities.ReservationInfo) (*entities.ReservationInfo, error) {
-	result, err := s.storage.UpdateReservationInfo(ctx, ri)
+func (s *ServiceReservationInfo) UpdateReservationInfoByID(ctx context.Context, ri entities.ReservationInfo) (*entities.ReservationInfo, error) {
+	result, err := s.storage.UpdateReservationInfoByID(ctx, ri)
 	if err != nil {
 		zap.L().Error("UpdateReservationInfo", zap.Error(err))
 		return nil, err

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
+	"strconv"
 	"time"
 )
 
@@ -52,6 +53,20 @@ func NewService(storage StorageReservation, storageGuest StorageGuest, storageCl
 		storageCleaning:        storageCleaning,
 		serviceReservationInfo: svcReservationInfo,
 	}
+}
+
+func constructReservationInfo(reservation entities.Reservation, reservationInfo entities.ReservationInfo) entities.ReservationInfo {
+	electrecityAndWaterPrice, err := strconv.Atoi(reservation.ElectricityAndWaterPayment)
+	if err != nil {
+		electrecityAndWaterPrice = 0
+	}
+
+	reservationInfo.ReservationID = reservation.Oid
+	reservationInfo.PaymentOnCheckin = reservation.Price + reservation.CleaningPrice - reservationInfo.Prepayment + electrecityAndWaterPrice
+	reservationInfo.ActualCheckIn = reservation.CheckIn
+	reservationInfo.ActualCheckOut = reservation.CheckOut
+
+	return reservationInfo
 }
 
 func (s *Service) UpdateBooking(ctx context.Context, booking entities.Booking) (*entities.Booking, error) {
@@ -102,13 +117,9 @@ func (s *Service) UpdateBooking(ctx context.Context, booking entities.Booking) (
 		return nil, err
 	}
 
-	//update reservation_info
-	booking.ReservationInfo.PaymentOnCheckin = updateReservation.Price + updateReservation.CleaningPrice - booking.ReservationInfo.Prepayment
-	booking.ReservationInfo.ReservationID = updateReservation.Oid
-	booking.ReservationInfo.ActualCheckIn = updateReservation.CheckIn
-	booking.ReservationInfo.ActualCheckOut = updateReservation.CheckOut
+	reservationInfo := constructReservationInfo(*updateReservation, booking.ReservationInfo)
 
-	updateReservationInfo, err := s.serviceReservationInfo.UpdateReservationInfoByReservationID(ctx, booking.ReservationInfo)
+	updateReservationInfo, err := s.serviceReservationInfo.UpdateReservationInfoByReservationID(ctx, reservationInfo)
 	if err != nil {
 		zap.L().Error("UpdateBooking: failed to update reservation_info", zap.Error(err))
 		return nil, err
@@ -158,14 +169,9 @@ func (s *Service) CreateBooking(ctx context.Context, booking entities.Booking) (
 		return nil, err
 	}
 
-	// Создаём reservation_info с данными, переданными с фронта
-	booking.ReservationInfo.ReservationID = reservation.Oid
-	booking.ReservationInfo.PaymentOnCheckin = booking.Reservation.Price + booking.Reservation.CleaningPrice - booking.ReservationInfo.Prepayment
-	// Фактическое время заезда/выезда по умолчанию совпадает с договорным
-	booking.ReservationInfo.ActualCheckIn = reservation.CheckIn
-	booking.ReservationInfo.ActualCheckOut = reservation.CheckOut
+	reservationInfo := constructReservationInfo(*reservation, booking.ReservationInfo)
 
-	info, err := s.serviceReservationInfo.CreateReservationInfo(ctx, booking.ReservationInfo)
+	info, err := s.serviceReservationInfo.CreateReservationInfo(ctx, reservationInfo)
 	if err != nil {
 		zap.L().Error("CreateBooking: failed to create reservation_info", zap.Error(err))
 		return nil, err

@@ -76,7 +76,7 @@ func (db *Repository) GetReservationInfoByID(ctx context.Context, id int) (*enti
 	return result, nil
 }
 
-func (db *Repository) UpdateReservationInfo(ctx context.Context, ri entities.ReservationInfo) (*entities.ReservationInfo, error) {
+func (db *Repository) UpdateReservationInfoByID(ctx context.Context, ri entities.ReservationInfo) (*entities.ReservationInfo, error) {
 	runner := getRunner(ctx, db.PostgreSQL)
 	result := new(entities.ReservationInfo)
 

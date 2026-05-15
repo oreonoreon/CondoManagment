@@ -117,6 +117,9 @@ func Gin(h Handle) {
 		api.POST("/cleaning", h.CreateCleaning)
 		api.PATCH("/cleaning/:id", h.UpdateCleaning)
 		api.DELETE("/cleaning/:id", h.DeleteCleaning)
+
+		// ReservationInfo
+		api.PATCH("/reservation-info/:id", h.UpdateReservationInfo)
 	}
 
 	router.Run(":8080")
