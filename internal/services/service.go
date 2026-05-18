@@ -63,8 +63,8 @@ func constructReservationInfo(reservation entities.Reservation, reservationInfo 
 
 	reservationInfo.ReservationID = reservation.Oid
 	reservationInfo.PaymentOnCheckin = reservation.Price + reservation.CleaningPrice - reservationInfo.Prepayment + electrecityAndWaterPrice
-	reservationInfo.ActualCheckIn = reservation.CheckIn
-	reservationInfo.ActualCheckOut = reservation.CheckOut
+
+	reservationInfo.ActualCheckIn, reservationInfo.ActualCheckOut = applyDefaultTimes(reservation.CheckIn, reservation.CheckOut)
 
 	return reservationInfo
 }
@@ -108,7 +108,7 @@ func (s *Service) UpdateBooking(ctx context.Context, booking entities.Booking) (
 
 	booking.Reservation.GuestID = updateGuest.GuestID
 
-	booking.Reservation = applyDefaultTimes(booking.Reservation)
+	booking.Reservation.CheckIn, booking.Reservation.CheckOut = applyDefaultTimes(booking.Reservation.CheckIn, booking.Reservation.CheckOut)
 	booking.Reservation = prepareDaysAndPriceForNight(booking.Reservation)
 
 	updateReservation, err := s.storageReservation.UpdateReservation(ctx, booking.Reservation)
@@ -186,7 +186,7 @@ func (s *Service) CreateReservation(ctx context.Context, reservation entities.Re
 		return nil, errors.New("uuid is nil")
 	}
 
-	reservation = applyDefaultTimes(reservation)
+	reservation.CheckIn, reservation.CheckOut = applyDefaultTimes(reservation.CheckIn, reservation.CheckOut)
 	if reservation.Days == 0 {
 		res := prepareDaysAndPriceForNight(reservation)
 		reservation = res
@@ -223,28 +223,52 @@ func (s *Service) CreateReservation(ctx context.Context, reservation entities.Re
 
 // applyDefaultTimes устанавливает время по умолчанию, если оно не указано (00:00:00):
 // check_in → 14:00:00, check_out → 11:00:00
-func applyDefaultTimes(reservation entities.Reservation) entities.Reservation {
-	hIn, mIn, sIn := reservation.CheckIn.Clock()
-	hOut, mOut, sOut := reservation.CheckOut.Clock()
+//func applyDefaultTimes(reservation entities.Reservation) entities.Reservation {
+//	hIn, mIn, sIn := reservation.CheckIn.Clock()
+//	hOut, mOut, sOut := reservation.CheckOut.Clock()
+//
+//	if hIn == 0 && mIn == 0 && sIn == 0 && hOut == 0 && mOut == 0 && sOut == 0 {
+//		reservation.CheckIn = time.Date(
+//			reservation.CheckIn.Year(),
+//			reservation.CheckIn.Month(),
+//			reservation.CheckIn.Day(),
+//			14, 0, 0, 0,
+//			reservation.CheckIn.Location(),
+//		)
+//		reservation.CheckOut = time.Date(
+//			reservation.CheckOut.Year(),
+//			reservation.CheckOut.Month(),
+//			reservation.CheckOut.Day(),
+//			11, 0, 0, 0,
+//			reservation.CheckOut.Location(),
+//		)
+//	}
+//
+//	return reservation
+//}
+
+func applyDefaultTimes(CheckIn time.Time, CheckOut time.Time) (time.Time, time.Time) {
+	hIn, mIn, sIn := CheckIn.Clock()
+	hOut, mOut, sOut := CheckOut.Clock()
 
 	if hIn == 0 && mIn == 0 && sIn == 0 && hOut == 0 && mOut == 0 && sOut == 0 {
-		reservation.CheckIn = time.Date(
-			reservation.CheckIn.Year(),
-			reservation.CheckIn.Month(),
-			reservation.CheckIn.Day(),
+		CheckIn = time.Date(
+			CheckIn.Year(),
+			CheckIn.Month(),
+			CheckIn.Day(),
 			14, 0, 0, 0,
-			reservation.CheckIn.Location(),
+			CheckIn.Location(),
 		)
-		reservation.CheckOut = time.Date(
-			reservation.CheckOut.Year(),
-			reservation.CheckOut.Month(),
-			reservation.CheckOut.Day(),
+		CheckOut = time.Date(
+			CheckOut.Year(),
+			CheckOut.Month(),
+			CheckOut.Day(),
 			11, 0, 0, 0,
-			reservation.CheckOut.Location(),
+			CheckOut.Location(),
 		)
 	}
 
-	return reservation
+	return CheckIn, CheckOut
 }
 
 // что бы не считать в коде стоимость ночи и количество дней нужно отдать это на вычеслении бд (раньше это делала бд в вычесляемых столбцах но при удаление контейнера почему всё пропало хотя и потключены volumes)
