@@ -64,7 +64,7 @@ func constructReservationInfo(reservation entities.Reservation, reservationInfo 
 	reservationInfo.ReservationID = reservation.Oid
 	reservationInfo.PaymentOnCheckin = reservation.Price + reservation.CleaningPrice - reservationInfo.Prepayment + electrecityAndWaterPrice
 
-	reservationInfo.ActualCheckIn, reservationInfo.ActualCheckOut = applyDefaultTimes(reservation.CheckIn, reservation.CheckOut)
+	reservationInfo.ActualCheckIn, reservationInfo.ActualCheckOut = applyDefaultTimesIfShould(reservationInfo.ActualCheckIn, reservationInfo.ActualCheckOut)
 
 	return reservationInfo
 }
@@ -108,7 +108,7 @@ func (s *Service) UpdateBooking(ctx context.Context, booking entities.Booking) (
 
 	booking.Reservation.GuestID = updateGuest.GuestID
 
-	booking.Reservation.CheckIn, booking.Reservation.CheckOut = applyDefaultTimes(booking.Reservation.CheckIn, booking.Reservation.CheckOut)
+	booking.Reservation.CheckIn, booking.Reservation.CheckOut = applyDefaultTimesIfShould(booking.Reservation.CheckIn, booking.Reservation.CheckOut)
 	booking.Reservation = prepareDaysAndPriceForNight(booking.Reservation)
 
 	updateReservation, err := s.storageReservation.UpdateReservation(ctx, booking.Reservation)
@@ -186,7 +186,7 @@ func (s *Service) CreateReservation(ctx context.Context, reservation entities.Re
 		return nil, errors.New("uuid is nil")
 	}
 
-	reservation.CheckIn, reservation.CheckOut = applyDefaultTimes(reservation.CheckIn, reservation.CheckOut)
+	reservation.CheckIn, reservation.CheckOut = applyDefaultTimesIfShould(reservation.CheckIn, reservation.CheckOut)
 	if reservation.Days == 0 {
 		res := prepareDaysAndPriceForNight(reservation)
 		reservation = res
@@ -221,9 +221,9 @@ func (s *Service) CreateReservation(ctx context.Context, reservation entities.Re
 	return r, nil
 }
 
-// applyDefaultTimes устанавливает время по умолчанию, если оно не указано (00:00:00):
+// applyDefaultTimesIfShould устанавливает время по умолчанию, если оно не указано (00:00:00):
 // check_in → 14:00:00, check_out → 11:00:00
-//func applyDefaultTimes(reservation entities.Reservation) entities.Reservation {
+//func applyDefaultTimesIfShould(reservation entities.Reservation) entities.Reservation {
 //	hIn, mIn, sIn := reservation.CheckIn.Clock()
 //	hOut, mOut, sOut := reservation.CheckOut.Clock()
 //
@@ -247,7 +247,7 @@ func (s *Service) CreateReservation(ctx context.Context, reservation entities.Re
 //	return reservation
 //}
 
-func applyDefaultTimes(CheckIn time.Time, CheckOut time.Time) (time.Time, time.Time) {
+func applyDefaultTimesIfShould(CheckIn time.Time, CheckOut time.Time) (time.Time, time.Time) {
 	hIn, mIn, sIn := CheckIn.Clock()
 	hOut, mOut, sOut := CheckOut.Clock()
 
