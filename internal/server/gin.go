@@ -6,14 +6,15 @@ import (
 	"awesomeProject/internal/services"
 	"database/sql"
 	"errors"
+	"net/http"
+	"strconv"
+	"time"
+
 	"github.com/antonlindstrom/pgstore"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
-	"net/http"
-	"strconv"
-	"time"
 )
 
 type SpecialStore struct {
@@ -97,7 +98,8 @@ func Gin(h Handle) {
 		api.POST("/totalpriceReport", h.TotalPriceForPeriodReport)
 		api.POST("/report", h.Report)
 		api.POST("/r", h.BookingsPost)
-		api.POST("/rall", h.AllBookingsPost)
+		//api.POST("/rall", h.AllBookingsPost)
+		api.POST("/rall", h.AllBookingsPostNEW)
 		api.GET("/r", h.ApartmentsGet)
 		api.PATCH("/updateBooking", h.UpdateBooking)
 		api.POST("/createBooking", h.CreateBookingPost)
@@ -281,6 +283,23 @@ func (h *Handle) AllBookingsPost(c *gin.Context) {
 	}
 
 	bookings, err := h.TransactionalService.GetBookingALLForApartmentALL(c.Request.Context(), request.RoomNumbers)
+	if err != nil {
+		c.String(http.StatusInternalServerError, err.Error())
+		return
+	}
+	c.IndentedJSON(http.StatusOK, gin.H{
+		"bookings": bookings,
+	})
+}
+
+func (h *Handle) AllBookingsPostNEW(c *gin.Context) {
+	request := new(AllBookingsGetRequest)
+	if err := c.BindJSON(request); err != nil {
+		c.String(http.StatusBadRequest, err.Error())
+		return
+	}
+
+	bookings, err := h.TransactionalService.GetBookingsForRooms(c.Request.Context(), request.RoomNumbers)
 	if err != nil {
 		c.String(http.StatusInternalServerError, err.Error())
 		return

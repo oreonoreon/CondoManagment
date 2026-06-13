@@ -311,6 +311,73 @@ func (db *Repository) GetReservationsByCheckOut(ctx context.Context, date time.T
 	return reservations, rows.Err()
 }
 
+// GetBookingsForRooms загружает все бронирования для списка комнат
+// одним JOIN-запросом вместо N+1 запросов.
+func (db *Repository) GetBookingsForRooms(ctx context.Context, roomNumbers []string) ([]entities.Booking, error) {
+	runner := getRunner(ctx, db.PostgreSQL)
+
+	query := `
+		SELECT
+			r.id, r.room_number, r.guest_id, r.check_in, r.check_out, r.price,
+			r.cleaning_price, r.electricity_and_water_payment, r.adult, r.children,
+			r.description, r.days, r.price_for_night,
+			g.guest_id, g.name, g.phone, g.description,
+			ri.id, ri.reservation_id, ri.deposit, ri.deposit_currency, ri.prepayment,
+			ri.payment_on_checkin, ri.actual_check_in, ri.actual_check_out
+		FROM Reservations r
+		JOIN Guests g ON r.guest_id = g.guest_id
+		LEFT JOIN reservation_info ri ON r.id = ri.reservation_id
+		WHERE r.room_number = ANY($1)
+		ORDER BY r.check_in`
+
+	rows, err := runner.QueryContext(ctx, query, pq.Array(roomNumbers))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	bookings := make([]entities.Booking, 0, 100)
+	for rows.Next() {
+		var b entities.Booking
+		var gPhone sql.NullString
+		var riID, riReservationID, riDeposit, riPrepayment, riPaymentOnCheckin sql.NullInt64
+		var riDepositCurrency sql.NullString
+		var riActualCheckIn, riActualCheckOut sql.NullTime
+
+		if err := rows.Scan(
+			&b.Reservation.Oid, &b.Reservation.RoomNumber, &b.Reservation.GuestID,
+			&b.Reservation.CheckIn, &b.Reservation.CheckOut, &b.Reservation.Price,
+			&b.Reservation.CleaningPrice, &b.Reservation.ElectricityAndWaterPayment,
+			&b.Reservation.Adult, &b.Reservation.Children, &b.Reservation.Description,
+			&b.Reservation.Days, &b.Reservation.PriceForOneNight,
+			&b.Guest.GuestID, &b.Guest.Name, &gPhone, &b.Guest.Description,
+			&riID, &riReservationID, &riDeposit, &riDepositCurrency,
+			&riPrepayment, &riPaymentOnCheckin, &riActualCheckIn, &riActualCheckOut,
+		); err != nil {
+			return nil, err
+		}
+
+		if gPhone.Valid {
+			b.Guest.Phone = gPhone.String
+		}
+		if riID.Valid {
+			b.ReservationInfo = entities.ReservationInfo{
+				ID:               int(riID.Int64),
+				ReservationID:    int(riReservationID.Int64),
+				Deposit:          int(riDeposit.Int64),
+				DepositCurrency:  riDepositCurrency.String,
+				Prepayment:       int(riPrepayment.Int64),
+				PaymentOnCheckin: int(riPaymentOnCheckin.Int64),
+				ActualCheckIn:    riActualCheckIn.Time,
+				ActualCheckOut:   riActualCheckOut.Time,
+			}
+		}
+
+		bookings = append(bookings, b)
+	}
+	return bookings, rows.Err()
+}
+
 // Ошибки Postgres → доменные
 func translatePQ(err error) error {
 	var pqe *pq.Error

@@ -8,10 +8,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/google/uuid"
-	"go.uber.org/zap"
 	"strconv"
 	"time"
+
+	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
 type Service struct {
@@ -31,6 +32,7 @@ type StorageReservation interface {
 	GetReservationByID(ctx context.Context, id int) (*entities.Reservation, error)
 	GetReservationsByCheckIn(ctx context.Context, date time.Time) ([]entities.Reservation, error)
 	GetReservationsByCheckOut(ctx context.Context, date time.Time) ([]entities.Reservation, error)
+	GetBookingsForRooms(ctx context.Context, roomNumbers []string) ([]entities.Booking, error)
 }
 
 type StorageGuest interface {
@@ -436,6 +438,18 @@ func (s *Service) GetReservationALLForApartment(ctx context.Context, roomNumber 
 		return nil, err
 	}
 	return reservations, nil
+}
+
+// GetBookingsForRooms загружает все бронирования для списка комнат
+// одним JOIN-запросом вместо N+1 запросов.
+func (s *Service) GetBookingsForRooms(ctx context.Context, roomNumbers []string) ([]entities.Booking, error) {
+	bookings, err := s.storageReservation.GetBookingsForRooms(ctx, roomNumbers)
+	if err != nil {
+		zap.L().Error("GetBookingsForRooms", zap.Error(err), zap.Strings("room_numbers", roomNumbers))
+		return nil, err
+	}
+
+	return bookings, nil
 }
 
 func (s *Service) GetBooking(ctx context.Context, roomNumber string, start string, end string) ([]entities.Booking, error) {

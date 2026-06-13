@@ -32,6 +32,7 @@ type ServiceInterface interface {
 	FindTotalPriceForPeriod(ctx context.Context, roomNumber, startPeriod, endPeriod string) (int, int, error)
 	GetBookingByCheckIn(ctx context.Context, date time.Time) ([]entities.Booking, error)
 	GetBookingByCheckOut(ctx context.Context, date time.Time) ([]entities.Booking, error)
+	GetBookingsForRooms(ctx context.Context, roomNumbers []string) ([]entities.Booking, error)
 }
 
 type TransactionManager interface {
@@ -319,6 +320,19 @@ func (ts *TransactionalService) GetBookingByCheckOut(ctx context.Context, date t
 	var resultErr error
 	err := ts.txManager.WithTransaction(ctx, func(ctx context.Context) error {
 		result, resultErr = ts.serviceInterface.GetBookingByCheckOut(ctx, date)
+		return resultErr
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (ts *TransactionalService) GetBookingsForRooms(ctx context.Context, roomNumbers []string) ([]entities.Booking, error) {
+	var result []entities.Booking
+	var resultErr error
+	err := ts.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		result, resultErr = ts.serviceInterface.GetBookingsForRooms(ctx, roomNumbers)
 		return resultErr
 	})
 	if err != nil {
