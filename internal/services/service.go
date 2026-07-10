@@ -566,11 +566,11 @@ func FreeApartmentForDates() {
 
 }
 
-func (s *Service) FindTotalPriceForPeriodReport(ctx context.Context, apartments []entities.Apartment, startPeriod, endPeriod string) (map[string]int, error) {
+func (s *Service) FindTotalPriceForPeriodReport(ctx context.Context, apartments []entities.Apartment, start, end time.Time) (map[string]int, error) {
 	m := make(map[string]int)
 
 	for _, apartment := range apartments {
-		price, _, err := s.FindTotalPriceForPeriod(ctx, apartment.RoomNumber, startPeriod, endPeriod)
+		price, _, err := s.FindTotalPriceForPeriod(ctx, apartment.RoomNumber, start, end)
 		if err != nil {
 			return nil, err
 		}
@@ -579,11 +579,11 @@ func (s *Service) FindTotalPriceForPeriodReport(ctx context.Context, apartments 
 	return m, nil
 }
 
-func (s *Service) FindMiddlePriceForPeriodReport(ctx context.Context, apartments []entities.Apartment, startPeriod, endPeriod string) (map[string]int, error) {
+func (s *Service) FindMiddlePriceForPeriodReport(ctx context.Context, apartments []entities.Apartment, start, end time.Time) (map[string]int, error) {
 	m := make(map[string]int)
 
 	for _, apartment := range apartments {
-		price, err := s.FindMiddlePriceForPeriod(ctx, apartment.RoomNumber, startPeriod, endPeriod)
+		price, err := s.FindMiddlePriceForPeriod(ctx, apartment.RoomNumber, start, end)
 		if err != nil {
 			return nil, err
 		}
@@ -593,8 +593,8 @@ func (s *Service) FindMiddlePriceForPeriodReport(ctx context.Context, apartments
 }
 
 // цены расчитаные по переуду, к примеру низкий сезон переходящий в высокий
-func (s *Service) FindMiddlePriceForPeriod(ctx context.Context, roomNumber string, startPeriod, endPeriod string) (int, error) {
-	totalSum, totalDays, err := s.FindTotalPriceForPeriod(ctx, roomNumber, startPeriod, endPeriod)
+func (s *Service) FindMiddlePriceForPeriod(ctx context.Context, roomNumber string, start, end time.Time) (int, error) {
+	totalSum, totalDays, err := s.FindTotalPriceForPeriod(ctx, roomNumber, start, end)
 	if err != nil {
 		return 0, err
 	}
@@ -604,15 +604,9 @@ func (s *Service) FindMiddlePriceForPeriod(ctx context.Context, roomNumber strin
 	return totalSum / totalDays, nil
 }
 
-func (s *Service) FindTotalPriceForPeriod(ctx context.Context, roomNumber, startPeriod, endPeriod string) (int, int, error) {
-	start, err := models.TimeConvert(startPeriod)
-	if err != nil {
-		return 0, 0, err
-	}
-	end, err := models.TimeConvert(endPeriod)
-	if err != nil {
-		return 0, 0, err
-	}
+func (s *Service) FindTotalPriceForPeriod(ctx context.Context, roomNumber string, start, end time.Time) (int, int, error) {
+	start = start.Truncate(24 * time.Hour)
+	end = end.Truncate(24 * time.Hour)
 
 	if !start.Before(end) {
 		return 0, 0, erro.ErrStartDateIsNotBeforeEndDate
@@ -629,6 +623,8 @@ func (s *Service) FindTotalPriceForPeriod(ctx context.Context, roomNumber, start
 	var totalSum int
 
 	for _, booking := range bookings {
+		booking.CheckIn = booking.CheckIn.Truncate(24 * time.Hour)
+		booking.CheckOut = booking.CheckOut.Truncate(24 * time.Hour)
 		if booking.Price != 0 {
 			switch {
 			// кейс когда чекин раньше start а чекаут раньше end

@@ -26,10 +26,10 @@ type ServiceInterface interface {
 	GetBooking(ctx context.Context, roomNumber string, start string, end string) ([]entities.Booking, error)
 	GetReservationForPeriodByApartment(ctx context.Context, roomNumber string, start string, end string) ([]entities.Reservation, error)
 	GetReservationByPhoneNumber(ctx context.Context, phone string) ([]entities.Reservation, error)
-	FindTotalPriceForPeriodReport(ctx context.Context, apartments []entities.Apartment, startPeriod, endPeriod string) (map[string]int, error)
-	FindMiddlePriceForPeriodReport(ctx context.Context, apartments []entities.Apartment, startPeriod, endPeriod string) (map[string]int, error)
-	FindMiddlePriceForPeriod(ctx context.Context, roomNumber string, startPeriod, endPeriod string) (int, error)
-	FindTotalPriceForPeriod(ctx context.Context, roomNumber, startPeriod, endPeriod string) (int, int, error)
+	FindTotalPriceForPeriodReport(ctx context.Context, apartments []entities.Apartment, start, end time.Time) (map[string]int, error)
+	FindMiddlePriceForPeriodReport(ctx context.Context, apartments []entities.Apartment, start, end time.Time) (map[string]int, error)
+	FindMiddlePriceForPeriod(ctx context.Context, roomNumber string, start, end time.Time) (int, error)
+	FindTotalPriceForPeriod(ctx context.Context, roomNumber string, start, end time.Time) (int, int, error)
 	GetBookingByCheckIn(ctx context.Context, date time.Time) ([]entities.Booking, error)
 	GetBookingByCheckOut(ctx context.Context, date time.Time) ([]entities.Booking, error)
 	GetBookingsForRooms(ctx context.Context, roomNumbers []string) ([]entities.Booking, error)
@@ -241,12 +241,12 @@ func (ts *TransactionalService) GetReservationByPhoneNumber(ctx context.Context,
 	return result, nil
 }
 
-func (ts *TransactionalService) FindTotalPriceForPeriodReport(ctx context.Context, apartments []entities.Apartment, startPeriod, endPeriod string) (map[string]int, error) {
+func (ts *TransactionalService) FindTotalPriceForPeriodReport(ctx context.Context, apartments []entities.Apartment, start, end time.Time) (map[string]int, error) {
 	var result map[string]int
 	var resultErr error
 
 	err := ts.txManager.WithTransaction(ctx, func(ctx context.Context) error {
-		result, resultErr = ts.serviceInterface.FindTotalPriceForPeriodReport(ctx, apartments, startPeriod, endPeriod)
+		result, resultErr = ts.serviceInterface.FindTotalPriceForPeriodReport(ctx, apartments, start, end)
 		return resultErr
 	})
 
@@ -256,12 +256,12 @@ func (ts *TransactionalService) FindTotalPriceForPeriodReport(ctx context.Contex
 	return result, nil
 }
 
-func (ts *TransactionalService) FindMiddlePriceForPeriodReport(ctx context.Context, apartments []entities.Apartment, startPeriod, endPeriod string) (map[string]int, error) {
+func (ts *TransactionalService) FindMiddlePriceForPeriodReport(ctx context.Context, apartments []entities.Apartment, start, end time.Time) (map[string]int, error) {
 	var result map[string]int
 	var resultErr error
 
 	err := ts.txManager.WithTransaction(ctx, func(ctx context.Context) error {
-		result, resultErr = ts.serviceInterface.FindMiddlePriceForPeriodReport(ctx, apartments, startPeriod, endPeriod)
+		result, resultErr = ts.serviceInterface.FindMiddlePriceForPeriodReport(ctx, apartments, start, end)
 		return resultErr
 	})
 
@@ -271,12 +271,12 @@ func (ts *TransactionalService) FindMiddlePriceForPeriodReport(ctx context.Conte
 	return result, nil
 }
 
-func (ts *TransactionalService) FindMiddlePriceForPeriod(ctx context.Context, roomNumber string, startPeriod, endPeriod string) (int, error) {
+func (ts *TransactionalService) FindMiddlePriceForPeriod(ctx context.Context, roomNumber string, start, end time.Time) (int, error) {
 	var result int
 	var resultErr error
 
 	err := ts.txManager.WithTransaction(ctx, func(ctx context.Context) error {
-		result, resultErr = ts.serviceInterface.FindMiddlePriceForPeriod(ctx, roomNumber, startPeriod, endPeriod)
+		result, resultErr = ts.serviceInterface.FindMiddlePriceForPeriod(ctx, roomNumber, start, end)
 		return resultErr
 	})
 
@@ -286,13 +286,13 @@ func (ts *TransactionalService) FindMiddlePriceForPeriod(ctx context.Context, ro
 	return result, nil
 }
 
-func (ts *TransactionalService) FindTotalPriceForPeriod(ctx context.Context, roomNumber, startPeriod, endPeriod string) (int, int, error) {
+func (ts *TransactionalService) FindTotalPriceForPeriod(ctx context.Context, roomNumber string, start, end time.Time) (int, int, error) {
 	var result1 int
 	var result2 int
 	var resultErr error
 
 	err := ts.txManager.WithTransaction(ctx, func(ctx context.Context) error {
-		result1, result2, resultErr = ts.serviceInterface.FindTotalPriceForPeriod(ctx, roomNumber, startPeriod, endPeriod)
+		result1, result2, resultErr = ts.serviceInterface.FindTotalPriceForPeriod(ctx, roomNumber, start, end)
 		return resultErr
 	})
 

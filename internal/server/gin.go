@@ -90,15 +90,18 @@ func Gin(h Handle) {
 		api.POST("/sync", h.SynchroniseBookings)
 		api.GET("/ExcelRes", h.ExcelBookings)
 		api.POST("/ExcelRes", h.ExcelBookings)
-		api.GET("/middleprice", h.MiddlePriceForPeriod)
-		api.POST("/middleprice", h.MiddlePriceForPeriod)
-		api.GET("/middlepriceReport", h.MiddlePriceForPeriodReport)
-		api.POST("/middlepriceReport", h.MiddlePriceForPeriodReport)
-		api.GET("/totalpriceReport", h.TotalPriceForPeriodReport)
+		//api.GET("/middleprice", h.MiddlePriceForPeriod)
+		//api.POST("/middleprice", h.MiddlePriceForPeriod)
+		//api.GET("/middlepriceReport", h.MiddlePriceForPeriodReport)
+		//api.POST("/middlepriceReport", h.MiddlePriceForPeriodReport)
+
 		api.POST("/totalpriceReport", h.TotalPriceForPeriodReport)
 		api.POST("/report", h.Report)
-		api.POST("/r", h.BookingsPost)
+
+		//depricated
+		//api.POST("/r", h.BookingsPost)
 		//api.POST("/rall", h.AllBookingsPost)
+
 		api.POST("/rall", h.AllBookingsPostNEW)
 		api.GET("/r", h.ApartmentsGet)
 		api.PATCH("/updateBooking", h.UpdateBooking)
@@ -251,23 +254,24 @@ type BookingsGetRequest struct {
 	RoomNumber string `json:"room_number"`
 }
 
-func (h *Handle) BookingsPost(c *gin.Context) {
-	request := new(BookingsGetRequest)
-	err := c.BindJSON(request)
-	if err != nil {
-		c.String(http.StatusBadRequest, err.Error())
-		return
-	}
-
-	bookings, err := h.TransactionalService.GetBookingALLForApartment(c.Request.Context(), request.RoomNumber)
-	if err != nil {
-		c.String(http.StatusInternalServerError, err.Error())
-		return
-	}
-	c.IndentedJSON(http.StatusOK, gin.H{
-		"bookings": bookings,
-	})
-}
+//depricated
+//func (h *Handle) BookingsPost(c *gin.Context) {
+//	request := new(BookingsGetRequest)
+//	err := c.BindJSON(request)
+//	if err != nil {
+//		c.String(http.StatusBadRequest, err.Error())
+//		return
+//	}
+//
+//	bookings, err := h.TransactionalService.GetBookingALLForApartment(c.Request.Context(), request.RoomNumber)
+//	if err != nil {
+//		c.String(http.StatusInternalServerError, err.Error())
+//		return
+//	}
+//	c.IndentedJSON(http.StatusOK, gin.H{
+//		"bookings": bookings,
+//	})
+//}
 
 type AllBookingsGetRequest struct {
 	RoomNumbers []string `json:"room_numbers"`
@@ -309,24 +313,24 @@ func (h *Handle) AllBookingsPostNEW(c *gin.Context) {
 	})
 }
 
-func (h *Handle) MiddlePriceForPeriod(c *gin.Context) {
-	if c.Request.Method == http.MethodGet {
-		c.HTML(http.StatusOK, "middleprice.html", nil)
-		return
-	}
-
-	roomNumber := c.PostForm("room_number")
-	start := c.PostForm("start")
-	end := c.PostForm("end")
-
-	price, err := h.TransactionalService.FindMiddlePriceForPeriod(c.Request.Context(), roomNumber, start, end)
-	if err != nil {
-		zap.L().Error("FindMiddlePriceForPeriod", zap.Error(err))
-		c.String(http.StatusInternalServerError, err.Error())
-		return
-	}
-	c.String(http.StatusOK, strconv.Itoa(price))
-}
+//func (h *Handle) MiddlePriceForPeriod(c *gin.Context) {
+//	if c.Request.Method == http.MethodGet {
+//		c.HTML(http.StatusOK, "middleprice.html", nil)
+//		return
+//	}
+//
+//	roomNumber := c.PostForm("room_number")
+//	start := c.PostForm("start")
+//	end := c.PostForm("end")
+//
+//	price, err := h.TransactionalService.FindMiddlePriceForPeriod(c.Request.Context(), roomNumber, start, end)
+//	if err != nil {
+//		zap.L().Error("FindMiddlePriceForPeriod", zap.Error(err))
+//		c.String(http.StatusInternalServerError, err.Error())
+//		return
+//	}
+//	c.String(http.StatusOK, strconv.Itoa(price))
+//}
 
 func (h *Handle) SynchroniseBookings(c *gin.Context) {
 	if c.Request.Method == http.MethodGet {
