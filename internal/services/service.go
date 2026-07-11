@@ -579,6 +579,47 @@ func (s *Service) FindTotalPriceForPeriodReport(ctx context.Context, apartments 
 	return m, nil
 }
 
+// TotalPriceForPeriodReportXlsx строит xlsx отчёт суммарных цен по каждому апартаменту
+// помесячно за период с startMonth.startYear по endMonth.endYear (включительно).
+func (s *Service) TotalPriceForPeriodReportXlsx(ctx context.Context, apartments []entities.Apartment, startMonth, startYear, endMonth, endYear int) ([]byte, error) {
+	start := time.Date(startYear, time.Month(startMonth), 1, 0, 0, 0, 0, time.UTC)
+	end := time.Date(endYear, time.Month(endMonth), 1, 0, 0, 0, 0, time.UTC)
+
+	if start.After(end) {
+		return nil, erro.ErrStartDateIsNotBeforeEndDate
+	}
+
+	months := make([]time.Time, 0)
+	for month := start; !month.After(end); month = month.AddDate(0, 1, 0) {
+		months = append(months, month)
+	}
+
+	apartmentNames := make([]string, 0, len(apartments))
+	for _, apartment := range apartments {
+		apartmentNames = append(apartmentNames, apartment.RoomNumber)
+	}
+
+	pricesByApartmentAndMonth := make(map[string]map[string]int, len(apartments))
+	for _, monthStart := range months {
+		monthEnd := monthStart.AddDate(0, 1, 0)
+
+		priceMap, err := s.FindTotalPriceForPeriodReport(ctx, apartments, monthStart, monthEnd)
+		if err != nil {
+			return nil, err
+		}
+
+		monthKey := monthStart.Format("01.2006")
+		for apartmentName, price := range priceMap {
+			if pricesByApartmentAndMonth[apartmentName] == nil {
+				pricesByApartmentAndMonth[apartmentName] = make(map[string]int)
+			}
+			pricesByApartmentAndMonth[apartmentName][monthKey] = price
+		}
+	}
+
+	return report.TotalPriceForPeriodReport(pricesByApartmentAndMonth, apartmentNames, months)
+}
+
 func (s *Service) FindMiddlePriceForPeriodReport(ctx context.Context, apartments []entities.Apartment, start, end time.Time) (map[string]int, error) {
 	m := make(map[string]int)
 
@@ -604,6 +645,10 @@ func (s *Service) FindMiddlePriceForPeriod(ctx context.Context, roomNumber strin
 	return totalSum / totalDays, nil
 }
 
+// FindTotalPriceForPeriod считает суммарную выручку и количество ночей по бронированиям
+// апартамента roomNumber, пересекающимся с периодом [start, end).
+// Для каждого бронирования учитывается только та часть ночей, которая попадает в запрошенный
+// период (пересечение [start, end) и [CheckIn, CheckOut)).
 func (s *Service) FindTotalPriceForPeriod(ctx context.Context, roomNumber string, start, end time.Time) (int, int, error) {
 	start = start.Truncate(24 * time.Hour)
 	end = end.Truncate(24 * time.Hour)
@@ -623,37 +668,37 @@ func (s *Service) FindTotalPriceForPeriod(ctx context.Context, roomNumber string
 	var totalSum int
 
 	for _, booking := range bookings {
-		booking.CheckIn = booking.CheckIn.Truncate(24 * time.Hour)
-		booking.CheckOut = booking.CheckOut.Truncate(24 * time.Hour)
-		if booking.Price != 0 {
-			switch {
-			// кейс когда чекин раньше start а чекаут раньше end
-			case (start.After(booking.CheckIn) || start.Equal(booking.CheckIn)) && (end.After(booking.CheckOut) || end.Equal(booking.CheckOut)):
-				days := helperForMiddlePrice(booking.CheckOut, start)
-				totalSum += days * booking.PriceForOneNight
-				totalDays += days
-				zap.L().Debug("кейс когда чекин раньше start а чекаут раньше end", zap.Int("days", days), zap.Int("booking.PriceForOneNight", booking.PriceForOneNight))
-			// кейс когда чекаут позже end и чекин позже start
-			case (start.Before(booking.CheckIn) || start.Equal(booking.CheckIn)) && (end.Before(booking.CheckOut) || end.Equal(booking.CheckOut)):
-				days := helperForMiddlePrice(end, booking.CheckIn)
-				totalSum += days * booking.PriceForOneNight
-				totalDays += days
-				zap.L().Debug("кейс когда чекаут позже end и чекин позже start", zap.Int("days", days), zap.Int("booking.PriceForOneNight", booking.PriceForOneNight))
-			// кейс когда чекин и чекаут внутри периуда start и end
-			case (start.Before(booking.CheckIn) || start.Equal(booking.CheckIn)) && (end.After(booking.CheckOut) || end.Equal(booking.CheckOut)):
-				days := helperForMiddlePrice(booking.CheckOut, booking.CheckIn)
-				totalSum += days * booking.PriceForOneNight
-				totalDays += days
-				zap.L().Debug("кейс когда чекин и чекаут внутри периуда start и end", zap.Int("days", days), zap.Int("booking.PriceForOneNight", booking.PriceForOneNight))
-			//кейс когда чекин и чекаут за периудом start и end
-			case (start.After(booking.CheckIn) || start.Equal(booking.CheckIn)) && (end.Before(booking.CheckOut) || end.Equal(booking.CheckOut)):
-				days := helperForMiddlePrice(end, start)
-				totalSum += days * booking.PriceForOneNight
-				totalDays += days
-				zap.L().Debug("кейс когда чекин и чекаут за периудом start и end", zap.Int("days", days), zap.Int("booking.PriceForOneNight", booking.PriceForOneNight))
-			}
+		checkIn := booking.CheckIn.Truncate(24 * time.Hour)
+		checkOut := booking.CheckOut.Truncate(24 * time.Hour)
+
+		if booking.PriceForOneNight == 0 {
+			continue
 		}
 
+		// пересечение периода бронирования [checkIn, checkOut) с запрошенным периодом [start, end)
+		overlapStart := checkIn
+		if start.After(overlapStart) {
+			overlapStart = start
+		}
+		overlapEnd := checkOut
+		if end.Before(overlapEnd) {
+			overlapEnd = end
+		}
+
+		// периоды не пересекаются или пересечение нулевое
+		if !overlapStart.Before(overlapEnd) {
+			continue
+		}
+
+		days := helperForMiddlePrice(overlapEnd, overlapStart)
+		totalSum += days * booking.PriceForOneNight
+		totalDays += days
+
+		zap.L().Debug("FindTotalPriceForPeriod пересечение периодов",
+			zap.String("room_number", roomNumber),
+			zap.Int("days", days),
+			zap.Int("booking.PriceForOneNight", booking.PriceForOneNight),
+		)
 	}
 
 	return totalSum, totalDays, nil

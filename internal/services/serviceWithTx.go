@@ -27,6 +27,7 @@ type ServiceInterface interface {
 	GetReservationForPeriodByApartment(ctx context.Context, roomNumber string, start string, end string) ([]entities.Reservation, error)
 	GetReservationByPhoneNumber(ctx context.Context, phone string) ([]entities.Reservation, error)
 	FindTotalPriceForPeriodReport(ctx context.Context, apartments []entities.Apartment, start, end time.Time) (map[string]int, error)
+	TotalPriceForPeriodReportXlsx(ctx context.Context, apartments []entities.Apartment, startMonth, startYear, endMonth, endYear int) ([]byte, error)
 	FindMiddlePriceForPeriodReport(ctx context.Context, apartments []entities.Apartment, start, end time.Time) (map[string]int, error)
 	FindMiddlePriceForPeriod(ctx context.Context, roomNumber string, start, end time.Time) (int, error)
 	FindTotalPriceForPeriod(ctx context.Context, roomNumber string, start, end time.Time) (int, int, error)
@@ -247,6 +248,21 @@ func (ts *TransactionalService) FindTotalPriceForPeriodReport(ctx context.Contex
 
 	err := ts.txManager.WithTransaction(ctx, func(ctx context.Context) error {
 		result, resultErr = ts.serviceInterface.FindTotalPriceForPeriodReport(ctx, apartments, start, end)
+		return resultErr
+	})
+
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (ts *TransactionalService) TotalPriceForPeriodReportXlsx(ctx context.Context, apartments []entities.Apartment, startMonth, startYear, endMonth, endYear int) ([]byte, error) {
+	var result []byte
+	var resultErr error
+
+	err := ts.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		result, resultErr = ts.serviceInterface.TotalPriceForPeriodReportXlsx(ctx, apartments, startMonth, startYear, endMonth, endYear)
 		return resultErr
 	})
 

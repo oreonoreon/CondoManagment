@@ -96,6 +96,7 @@ func Gin(h Handle) {
 		//api.POST("/middlepriceReport", h.MiddlePriceForPeriodReport)
 
 		api.POST("/totalpriceReport", h.TotalPriceForPeriodReport)
+		api.POST("/totalpriceReportXlsx", h.TotalPriceForPeriodReportXlsx)
 		api.POST("/report", h.Report)
 
 		//depricated

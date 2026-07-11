@@ -121,3 +121,59 @@ func (h *Handle) TotalPriceForPeriodReport(c *gin.Context) {
 
 	c.IndentedJSON(http.StatusOK, priceMap)
 }
+
+// totalPriceReportStartMonth/Year и totalPriceReportEndMonth/Year задают период (помесячно,
+// включительно), за который строится xlsx отчёт суммарных цен по апартаментам.
+const (
+	totalPriceReportStartMonth = 11
+	totalPriceReportStartYear  = 2023
+	totalPriceReportEndMonth   = 12
+	totalPriceReportEndYear    = 2028
+)
+
+// TotalPriceForPeriodReportXlsx отдаёт xlsx файл с суммарными ценами по каждому апартаменту
+// помесячно за период с totalPriceReportStartMonth.totalPriceReportStartYear по
+// totalPriceReportEndMonth.totalPriceReportEndYear.
+func (h *Handle) TotalPriceForPeriodReportXlsx(c *gin.Context) {
+	roleStr, err := getRoleFromContext(c)
+	if err != nil {
+		c.String(http.StatusUnauthorized, err.Error())
+		return
+	}
+
+	apartments, err := h.ServiceApartment.GetAllApartment(c.Request.Context(), roleStr)
+	if err != nil {
+		zap.L().Error("TotalPriceForPeriodReportXlsx", zap.Error(err))
+		c.String(http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	fileData, err := h.TransactionalService.TotalPriceForPeriodReportXlsx(
+		c.Request.Context(),
+		apartments,
+		totalPriceReportStartMonth,
+		totalPriceReportStartYear,
+		totalPriceReportEndMonth,
+		totalPriceReportEndYear,
+	)
+	if err != nil {
+		zap.L().Error("TotalPriceForPeriodReportXlsx", zap.Error(err))
+		c.String(http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	fileName := "TotalPriceReport.xlsx"
+
+	c.Header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	c.Header("Content-Disposition", "attachment; filename=\""+fileName+"\"")
+	c.Header("Content-Transfer-Encoding", "binary")
+	c.Header("Content-Length", strconv.Itoa(len(fileData)))
+	c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
+	c.Header("Pragma", "no-cache")
+	c.Header("Expires", "0")
+
+	c.Writer.WriteHeader(http.StatusOK)
+	if _, err := c.Writer.Write(fileData); err != nil {
+		zap.L().Error("TotalPriceForPeriodReportXlsx/Write file data", zap.Error(err))
+	}
+}
