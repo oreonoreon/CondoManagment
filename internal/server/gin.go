@@ -21,6 +21,20 @@ type SpecialStore struct {
 	*pgstore.PGStore
 }
 
+// sameSiteString переводит http.SameSite в читаемую строку для логов.
+func sameSiteString(s http.SameSite) string {
+	switch s {
+	case http.SameSiteNoneMode:
+		return "None"
+	case http.SameSiteLaxMode:
+		return "Lax"
+	case http.SameSiteStrictMode:
+		return "Strict"
+	default:
+		return "Default"
+	}
+}
+
 func (s SpecialStore) Options(options sessions.Options) {
 	s.PGStore.Options = options.ToGorillaOptions()
 }
@@ -77,6 +91,15 @@ func Gin(h Handle) {
 
 	store.Options(cookieOptions)
 	router.Use(sessions.Sessions("sess", store))
+
+	// Явно логируем реально применённые настройки, влияющие на куки/CORS,
+	// чтобы на проде (Railway) сразу было видно, что подхватилось из ENV.
+	zap.L().Info("Session/CORS runtime settings",
+		zap.Bool("IsProduction", h.cfg.IsProduction),
+		zap.String("FrontURL", h.cfg.FrontURL),
+		zap.Bool("CookieSecure", cookieOptions.Secure),
+		zap.String("CookieSameSite", sameSiteString(cookieOptions.SameSite)),
+	)
 
 	router.POST("/login", h.LoginHandler)
 

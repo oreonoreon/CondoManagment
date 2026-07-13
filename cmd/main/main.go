@@ -32,6 +32,13 @@ func main() {
 
 	zap.L().Info("APPLICATION START")
 
+	// Явно логируем реально применённые значения конфига окружения,
+	// чтобы на проде (Railway) сразу было видно, что подхватилось из ENV.
+	zap.L().Info("Environment config loaded",
+		zap.Bool("IsProduction", confEnv.IsProduction),
+		zap.String("FrontURL", confEnv.FrontURL),
+	)
+
 	//create Db connection
 	db, err := repo.ConnectionPostgreSQl(confEnv)
 	if err != nil {
