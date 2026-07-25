@@ -3,6 +3,7 @@ package services
 import (
 	"awesomeProject/internal/entities"
 	"context"
+	"github.com/google/uuid"
 	"time"
 )
 
@@ -10,6 +11,7 @@ type TransactionalService struct {
 	serviceInterface            ServiceInterface
 	cleaningServiceInterface    CleaningServiceInterface
 	reservationInfoSvcInterface ReservationInfoServiceInterface
+	statusServiceInterface      StatusServiceInterface
 	txManager                   TransactionManager
 }
 
@@ -44,6 +46,12 @@ type ReservationInfoServiceInterface interface {
 	UpdateReservationInfoByID(ctx context.Context, ri entities.ReservationInfo) (*entities.ReservationInfo, error)
 }
 
+type StatusServiceInterface interface {
+	List(ctx context.Context) ([]entities.StatusType, error)
+	GetByReservation(ctx context.Context, reservationID int) ([]entities.ReservationStatus, error)
+	Toggle(ctx context.Context, reservationID, statusTypeID int, setBy uuid.UUID) (*entities.ReservationStatus, error)
+}
+
 type CleaningServiceInterface interface {
 	CreateCleaningManual(ctx context.Context, c entities.Cleaning) (*entities.Cleaning, error)
 	UpdateCleaning(ctx context.Context, c entities.Cleaning) (*entities.Cleaning, error)
@@ -53,11 +61,12 @@ type CleaningServiceInterface interface {
 	GetCleaningByDate(ctx context.Context, date time.Time) ([]entities.Cleaning, error)
 }
 
-func NewTransactionalService(serviceInterface ServiceInterface, cleaningServiceInterface CleaningServiceInterface, reservationInfoSvc ReservationInfoServiceInterface, txManager TransactionManager) *TransactionalService {
+func NewTransactionalService(serviceInterface ServiceInterface, cleaningServiceInterface CleaningServiceInterface, reservationInfoSvc ReservationInfoServiceInterface, statusServiceInterface StatusServiceInterface, txManager TransactionManager) *TransactionalService {
 	return &TransactionalService{
 		serviceInterface:            serviceInterface,
 		cleaningServiceInterface:    cleaningServiceInterface,
 		reservationInfoSvcInterface: reservationInfoSvc,
+		statusServiceInterface:      statusServiceInterface,
 		txManager:                   txManager,
 	}
 }
@@ -444,6 +453,47 @@ func (ts *TransactionalService) UpdateReservationInfoByID(ctx context.Context, r
 	var resultErr error
 	err := ts.txManager.WithTransaction(ctx, func(ctx context.Context) error {
 		result, resultErr = ts.reservationInfoSvcInterface.UpdateReservationInfoByID(ctx, ri)
+		return resultErr
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// ------- Status (через транзакцию) -------
+
+func (ts *TransactionalService) ListStatusTypes(ctx context.Context) ([]entities.StatusType, error) {
+	var result []entities.StatusType
+	var resultErr error
+	err := ts.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		result, resultErr = ts.statusServiceInterface.List(ctx)
+		return resultErr
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (ts *TransactionalService) GetReservationStatuses(ctx context.Context, reservationID int) ([]entities.ReservationStatus, error) {
+	var result []entities.ReservationStatus
+	var resultErr error
+	err := ts.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		result, resultErr = ts.statusServiceInterface.GetByReservation(ctx, reservationID)
+		return resultErr
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (ts *TransactionalService) ToggleReservationStatus(ctx context.Context, reservationID, statusTypeID int, setBy uuid.UUID) (*entities.ReservationStatus, error) {
+	var result *entities.ReservationStatus
+	var resultErr error
+	err := ts.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		result, resultErr = ts.statusServiceInterface.Toggle(ctx, reservationID, statusTypeID, setBy)
 		return resultErr
 	})
 	if err != nil {

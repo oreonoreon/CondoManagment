@@ -60,8 +60,9 @@ func main() {
 	serviceReservation := services.NewService(postgre, postgre, postgre, *serviceReservationInfo)
 	serviceSettings := services.NewServiceSettings(postgre)
 	serviceCleaning := services.NewServiceCleaning(postgre)
+	serviceStatus := services.NewServiceStatus(postgre)
 
-	serviceTransaction := services.NewTransactionalService(serviceReservation, serviceCleaning, serviceReservationInfo, postgre)
+	serviceTransaction := services.NewTransactionalService(serviceReservation, serviceCleaning, serviceReservationInfo, serviceStatus, postgre)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

@@ -149,6 +149,11 @@ func Gin(h Handle) {
 
 		// ReservationInfo
 		api.PATCH("/reservation-info/:id", h.UpdateReservationInfo)
+
+		// Statuses
+		api.GET("/status-types", h.GetStatusTypes)
+		api.GET("/reservations/:id/statuses", h.GetReservationStatuses)
+		api.POST("/reservations/:id/statuses/:statusTypeId", h.ToggleReservationStatus)
 	}
 
 	router.Run(":8080")

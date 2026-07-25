@@ -375,7 +375,71 @@ func (db *Repository) GetBookingsForRooms(ctx context.Context, roomNumbers []str
 
 		bookings = append(bookings, b)
 	}
-	return bookings, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	if err := db.attachStatusesToBookings(ctx, runner, bookings); err != nil {
+		return nil, err
+	}
+
+	return bookings, nil
+}
+
+// attachStatusesToBookings одним запросом подгружает активные статусы для всех переданных броней
+// и раскладывает их по соответствующим Booking.Statuses (избегая N+1).
+func (db *Repository) attachStatusesToBookings(ctx context.Context, runner queryer, bookings []entities.Booking) error {
+	if len(bookings) == 0 {
+		return nil
+	}
+
+	reservationIDs := make([]int, 0, len(bookings))
+	for _, b := range bookings {
+		reservationIDs = append(reservationIDs, b.Reservation.Oid)
+	}
+
+	query := `SELECT rs.id, rs.reservation_id, rs.status_type_id, rs.is_active, rs.set_by, rs.set_at, rs.removed_at,
+			st.code, st.name, st.color
+		FROM reservation_statuses rs
+		JOIN status_types st ON st.id = rs.status_type_id
+		WHERE rs.reservation_id = ANY($1) AND rs.is_active = TRUE
+		ORDER BY st.sort_order`
+
+	rows, err := runner.QueryContext(ctx, query, pq.Array(reservationIDs))
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	statusesByReservation := make(map[int][]entities.ReservationStatus)
+	for rows.Next() {
+		var rs entities.ReservationStatus
+		var setBy sql.NullString
+		var removedAt sql.NullTime
+		if err := rows.Scan(
+			&rs.ID, &rs.ReservationID, &rs.StatusTypeID, &rs.IsActive, &setBy, &rs.SetAt, &removedAt,
+			&rs.StatusCode, &rs.StatusName, &rs.StatusColor,
+		); err != nil {
+			return err
+		}
+		if setBy.Valid {
+			if id, err := parseUUID(setBy.String); err == nil {
+				rs.SetBy = &id
+			}
+		}
+		if removedAt.Valid {
+			rs.RemovedAt = &removedAt.Time
+		}
+		statusesByReservation[rs.ReservationID] = append(statusesByReservation[rs.ReservationID], rs)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	for i := range bookings {
+		bookings[i].Statuses = statusesByReservation[bookings[i].Reservation.Oid]
+	}
+	return nil
 }
 
 // Ошибки Postgres → доменные
