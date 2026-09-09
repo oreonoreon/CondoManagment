@@ -10,9 +10,9 @@ CREATE TABLE IF NOT EXISTS status_types (
 );
 
 INSERT INTO status_types (code, name, sort_order) VALUES
-    ('paid_to_owner',    'Оплачено собственнику',      10),
-    ('guest_checked_in', 'Гость заехал',                20),
-    ('guest_paid_full',  'Гость оплатил полностью',     30);
+    ('paid_to_owner',    'Оплачено собственнику',      2),
+    ('guest_checked_in', 'Гость заехал',                1),
+    ('guest_paid_full',  'Гость оплатил полностью',     3);
 
 -- +migrate Down
 
