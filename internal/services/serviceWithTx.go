@@ -3,11 +3,16 @@ package services
 import (
 	"awesomeProject/internal/entities"
 	"context"
+	"github.com/google/uuid"
+	"time"
 )
 
 type TransactionalService struct {
-	serviceInterface ServiceInterface
-	txManager        TransactionManager
+	serviceInterface            ServiceInterface
+	cleaningServiceInterface    CleaningServiceInterface
+	reservationInfoSvcInterface ReservationInfoServiceInterface
+	statusServiceInterface      StatusServiceInterface
+	txManager                   TransactionManager
 }
 
 type ServiceInterface interface {
@@ -23,20 +28,46 @@ type ServiceInterface interface {
 	GetBooking(ctx context.Context, roomNumber string, start string, end string) ([]entities.Booking, error)
 	GetReservationForPeriodByApartment(ctx context.Context, roomNumber string, start string, end string) ([]entities.Reservation, error)
 	GetReservationByPhoneNumber(ctx context.Context, phone string) ([]entities.Reservation, error)
-	FindTotalPriceForPeriodReport(ctx context.Context, apartments []entities.Apartment, startPeriod, endPeriod string) (map[string]int, error)
-	FindMiddlePriceForPeriodReport(ctx context.Context, apartments []entities.Apartment, startPeriod, endPeriod string) (map[string]int, error)
-	FindMiddlePriceForPeriod(ctx context.Context, roomNumber string, startPeriod, endPeriod string) (int, error)
-	FindTotalPriceForPeriod(ctx context.Context, roomNumber, startPeriod, endPeriod string) (int, int, error)
+	FindTotalPriceForPeriodReport(ctx context.Context, apartments []entities.Apartment, start, end time.Time) (map[string]int, error)
+	TotalPriceForPeriodReportXlsx(ctx context.Context, apartments []entities.Apartment, startMonth, startYear, endMonth, endYear int) ([]byte, error)
+	FindMiddlePriceForPeriodReport(ctx context.Context, apartments []entities.Apartment, start, end time.Time) (map[string]int, error)
+	FindMiddlePriceForPeriod(ctx context.Context, roomNumber string, start, end time.Time) (int, error)
+	FindTotalPriceForPeriod(ctx context.Context, roomNumber string, start, end time.Time) (int, int, error)
+	GetBookingByCheckIn(ctx context.Context, date time.Time) ([]entities.Booking, error)
+	GetBookingByCheckOut(ctx context.Context, date time.Time) ([]entities.Booking, error)
+	GetBookingsForRooms(ctx context.Context, roomNumbers []string) ([]entities.Booking, error)
 }
 
 type TransactionManager interface {
 	WithTransaction(ctx context.Context, fn func(context.Context) error) error
 }
 
-func NewTransactionalService(serviceInterface ServiceInterface, txManager TransactionManager) *TransactionalService {
+type ReservationInfoServiceInterface interface {
+	UpdateReservationInfoByID(ctx context.Context, ri entities.ReservationInfo) (*entities.ReservationInfo, error)
+}
+
+type StatusServiceInterface interface {
+	List(ctx context.Context) ([]entities.StatusType, error)
+	GetByReservation(ctx context.Context, reservationID int) ([]entities.ReservationStatus, error)
+	Toggle(ctx context.Context, reservationID, statusTypeID int, setBy uuid.UUID) (*entities.ReservationStatus, error)
+}
+
+type CleaningServiceInterface interface {
+	CreateCleaningManual(ctx context.Context, c entities.Cleaning) (*entities.Cleaning, error)
+	UpdateCleaning(ctx context.Context, c entities.Cleaning) (*entities.Cleaning, error)
+	DeleteCleaning(ctx context.Context, id int) (*entities.Cleaning, error)
+	GetCleaningByID(ctx context.Context, id int) (*entities.Cleaning, error)
+	GetAllCleaning(ctx context.Context) ([]entities.Cleaning, error)
+	GetCleaningByDate(ctx context.Context, date time.Time) ([]entities.Cleaning, error)
+}
+
+func NewTransactionalService(serviceInterface ServiceInterface, cleaningServiceInterface CleaningServiceInterface, reservationInfoSvc ReservationInfoServiceInterface, statusServiceInterface StatusServiceInterface, txManager TransactionManager) *TransactionalService {
 	return &TransactionalService{
-		serviceInterface: serviceInterface,
-		txManager:        txManager,
+		serviceInterface:            serviceInterface,
+		cleaningServiceInterface:    cleaningServiceInterface,
+		reservationInfoSvcInterface: reservationInfoSvc,
+		statusServiceInterface:      statusServiceInterface,
+		txManager:                   txManager,
 	}
 }
 
@@ -220,12 +251,12 @@ func (ts *TransactionalService) GetReservationByPhoneNumber(ctx context.Context,
 	return result, nil
 }
 
-func (ts *TransactionalService) FindTotalPriceForPeriodReport(ctx context.Context, apartments []entities.Apartment, startPeriod, endPeriod string) (map[string]int, error) {
+func (ts *TransactionalService) FindTotalPriceForPeriodReport(ctx context.Context, apartments []entities.Apartment, start, end time.Time) (map[string]int, error) {
 	var result map[string]int
 	var resultErr error
 
 	err := ts.txManager.WithTransaction(ctx, func(ctx context.Context) error {
-		result, resultErr = ts.serviceInterface.FindTotalPriceForPeriodReport(ctx, apartments, startPeriod, endPeriod)
+		result, resultErr = ts.serviceInterface.FindTotalPriceForPeriodReport(ctx, apartments, start, end)
 		return resultErr
 	})
 
@@ -235,12 +266,12 @@ func (ts *TransactionalService) FindTotalPriceForPeriodReport(ctx context.Contex
 	return result, nil
 }
 
-func (ts *TransactionalService) FindMiddlePriceForPeriodReport(ctx context.Context, apartments []entities.Apartment, startPeriod, endPeriod string) (map[string]int, error) {
-	var result map[string]int
+func (ts *TransactionalService) TotalPriceForPeriodReportXlsx(ctx context.Context, apartments []entities.Apartment, startMonth, startYear, endMonth, endYear int) ([]byte, error) {
+	var result []byte
 	var resultErr error
 
 	err := ts.txManager.WithTransaction(ctx, func(ctx context.Context) error {
-		result, resultErr = ts.serviceInterface.FindMiddlePriceForPeriodReport(ctx, apartments, startPeriod, endPeriod)
+		result, resultErr = ts.serviceInterface.TotalPriceForPeriodReportXlsx(ctx, apartments, startMonth, startYear, endMonth, endYear)
 		return resultErr
 	})
 
@@ -250,12 +281,27 @@ func (ts *TransactionalService) FindMiddlePriceForPeriodReport(ctx context.Conte
 	return result, nil
 }
 
-func (ts *TransactionalService) FindMiddlePriceForPeriod(ctx context.Context, roomNumber string, startPeriod, endPeriod string) (int, error) {
+func (ts *TransactionalService) FindMiddlePriceForPeriodReport(ctx context.Context, apartments []entities.Apartment, start, end time.Time) (map[string]int, error) {
+	var result map[string]int
+	var resultErr error
+
+	err := ts.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		result, resultErr = ts.serviceInterface.FindMiddlePriceForPeriodReport(ctx, apartments, start, end)
+		return resultErr
+	})
+
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (ts *TransactionalService) FindMiddlePriceForPeriod(ctx context.Context, roomNumber string, start, end time.Time) (int, error) {
 	var result int
 	var resultErr error
 
 	err := ts.txManager.WithTransaction(ctx, func(ctx context.Context) error {
-		result, resultErr = ts.serviceInterface.FindMiddlePriceForPeriod(ctx, roomNumber, startPeriod, endPeriod)
+		result, resultErr = ts.serviceInterface.FindMiddlePriceForPeriod(ctx, roomNumber, start, end)
 		return resultErr
 	})
 
@@ -265,13 +311,13 @@ func (ts *TransactionalService) FindMiddlePriceForPeriod(ctx context.Context, ro
 	return result, nil
 }
 
-func (ts *TransactionalService) FindTotalPriceForPeriod(ctx context.Context, roomNumber, startPeriod, endPeriod string) (int, int, error) {
+func (ts *TransactionalService) FindTotalPriceForPeriod(ctx context.Context, roomNumber string, start, end time.Time) (int, int, error) {
 	var result1 int
 	var result2 int
 	var resultErr error
 
 	err := ts.txManager.WithTransaction(ctx, func(ctx context.Context) error {
-		result1, result2, resultErr = ts.serviceInterface.FindTotalPriceForPeriod(ctx, roomNumber, startPeriod, endPeriod)
+		result1, result2, resultErr = ts.serviceInterface.FindTotalPriceForPeriod(ctx, roomNumber, start, end)
 		return resultErr
 	})
 
@@ -279,4 +325,179 @@ func (ts *TransactionalService) FindTotalPriceForPeriod(ctx context.Context, roo
 		return 0, 0, err
 	}
 	return result1, result2, nil
+}
+
+func (ts *TransactionalService) GetBookingByCheckIn(ctx context.Context, date time.Time) ([]entities.Booking, error) {
+	var result []entities.Booking
+	var resultErr error
+	err := ts.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		result, resultErr = ts.serviceInterface.GetBookingByCheckIn(ctx, date)
+		return resultErr
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (ts *TransactionalService) GetBookingByCheckOut(ctx context.Context, date time.Time) ([]entities.Booking, error) {
+	var result []entities.Booking
+	var resultErr error
+	err := ts.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		result, resultErr = ts.serviceInterface.GetBookingByCheckOut(ctx, date)
+		return resultErr
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (ts *TransactionalService) GetBookingsForRooms(ctx context.Context, roomNumbers []string) ([]entities.Booking, error) {
+	var result []entities.Booking
+	var resultErr error
+	err := ts.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		result, resultErr = ts.serviceInterface.GetBookingsForRooms(ctx, roomNumbers)
+		return resultErr
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// ------- Cleaning (через транзакцию) -------
+
+func (ts *TransactionalService) CreateCleaningManual(ctx context.Context, c entities.Cleaning) (*entities.Cleaning, error) {
+	var result *entities.Cleaning
+	var resultErr error
+	err := ts.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		result, resultErr = ts.cleaningServiceInterface.CreateCleaningManual(ctx, c)
+		return resultErr
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (ts *TransactionalService) UpdateCleaning(ctx context.Context, c entities.Cleaning) (*entities.Cleaning, error) {
+	var result *entities.Cleaning
+	var resultErr error
+	err := ts.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		result, resultErr = ts.cleaningServiceInterface.UpdateCleaning(ctx, c)
+		return resultErr
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (ts *TransactionalService) DeleteCleaning(ctx context.Context, id int) (*entities.Cleaning, error) {
+	var result *entities.Cleaning
+	var resultErr error
+	err := ts.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		result, resultErr = ts.cleaningServiceInterface.DeleteCleaning(ctx, id)
+		return resultErr
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (ts *TransactionalService) GetCleaningByID(ctx context.Context, id int) (*entities.Cleaning, error) {
+	var result *entities.Cleaning
+	var resultErr error
+	err := ts.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		result, resultErr = ts.cleaningServiceInterface.GetCleaningByID(ctx, id)
+		return resultErr
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (ts *TransactionalService) GetAllCleaning(ctx context.Context) ([]entities.Cleaning, error) {
+	var result []entities.Cleaning
+	var resultErr error
+	err := ts.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		result, resultErr = ts.cleaningServiceInterface.GetAllCleaning(ctx)
+		return resultErr
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (ts *TransactionalService) GetCleaningByDate(ctx context.Context, date time.Time) ([]entities.Cleaning, error) {
+	var result []entities.Cleaning
+	var resultErr error
+	err := ts.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		result, resultErr = ts.cleaningServiceInterface.GetCleaningByDate(ctx, date)
+		return resultErr
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// ------- ReservationInfo (через транзакцию) -------
+
+func (ts *TransactionalService) UpdateReservationInfoByID(ctx context.Context, ri entities.ReservationInfo) (*entities.ReservationInfo, error) {
+	var result *entities.ReservationInfo
+	var resultErr error
+	err := ts.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		result, resultErr = ts.reservationInfoSvcInterface.UpdateReservationInfoByID(ctx, ri)
+		return resultErr
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// ------- Status (через транзакцию) -------
+
+func (ts *TransactionalService) ListStatusTypes(ctx context.Context) ([]entities.StatusType, error) {
+	var result []entities.StatusType
+	var resultErr error
+	err := ts.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		result, resultErr = ts.statusServiceInterface.List(ctx)
+		return resultErr
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (ts *TransactionalService) GetReservationStatuses(ctx context.Context, reservationID int) ([]entities.ReservationStatus, error) {
+	var result []entities.ReservationStatus
+	var resultErr error
+	err := ts.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		result, resultErr = ts.statusServiceInterface.GetByReservation(ctx, reservationID)
+		return resultErr
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (ts *TransactionalService) ToggleReservationStatus(ctx context.Context, reservationID, statusTypeID int, setBy uuid.UUID) (*entities.ReservationStatus, error) {
+	var result *entities.ReservationStatus
+	var resultErr error
+	err := ts.txManager.WithTransaction(ctx, func(ctx context.Context) error {
+		result, resultErr = ts.statusServiceInterface.Toggle(ctx, reservationID, statusTypeID, setBy)
+		return resultErr
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }

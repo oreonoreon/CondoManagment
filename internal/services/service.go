@@ -8,14 +8,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
+	"time"
+
 	"github.com/google/uuid"
 	"go.uber.org/zap"
-	"time"
 )
 
 type Service struct {
-	storageReservation StorageReservation
-	storageGuest       StorageGuest
+	storageReservation     StorageReservation
+	storageGuest           StorageGuest
+	storageCleaning        StorageCleaning
+	serviceReservationInfo ServiceReservationInfo
 }
 
 type StorageReservation interface {
@@ -26,6 +30,9 @@ type StorageReservation interface {
 	FindBookingByGuestUUID(ctx context.Context, uuid uuid.UUID) ([]entities.Reservation, error)
 	Delete(ctx context.Context, id int) (*entities.Reservation, error)
 	GetReservationByID(ctx context.Context, id int) (*entities.Reservation, error)
+	GetReservationsByCheckIn(ctx context.Context, date time.Time) ([]entities.Reservation, error)
+	GetReservationsByCheckOut(ctx context.Context, date time.Time) ([]entities.Reservation, error)
+	GetBookingsForRooms(ctx context.Context, roomNumbers []string) ([]entities.Booking, error)
 }
 
 type StorageGuest interface {
@@ -35,11 +42,33 @@ type StorageGuest interface {
 	ReadGuest(ctx context.Context, guestID uuid.UUID) (*entities.Guest, error)
 }
 
-func NewService(storage StorageReservation, storageGuest StorageGuest) *Service {
+type StorageCleaning interface {
+	CreateCleaning(ctx context.Context, c entities.Cleaning) (*entities.Cleaning, error)
+	UpdateCleaning(ctx context.Context, c entities.Cleaning) (*entities.Cleaning, error)
+	GetCleaningByReservationID(ctx context.Context, reservationID int) (*entities.Cleaning, error)
+}
+
+func NewService(storage StorageReservation, storageGuest StorageGuest, storageCleaning StorageCleaning, svcReservationInfo ServiceReservationInfo) *Service {
 	return &Service{
-		storageReservation: storage,
-		storageGuest:       storageGuest,
+		storageReservation:     storage,
+		storageGuest:           storageGuest,
+		storageCleaning:        storageCleaning,
+		serviceReservationInfo: svcReservationInfo,
 	}
+}
+
+func constructReservationInfo(reservation entities.Reservation, reservationInfo entities.ReservationInfo) entities.ReservationInfo {
+	electrecityAndWaterPrice, err := strconv.Atoi(reservation.ElectricityAndWaterPayment)
+	if err != nil {
+		electrecityAndWaterPrice = 0
+	}
+
+	reservationInfo.ReservationID = reservation.Oid
+	reservationInfo.PaymentOnCheckin = reservation.Price + reservation.CleaningPrice - reservationInfo.Prepayment + electrecityAndWaterPrice
+
+	reservationInfo.ActualCheckIn, reservationInfo.ActualCheckOut = applyDefaultTimesIfShould(reservationInfo.ActualCheckIn, reservationInfo.ActualCheckOut)
+
+	return reservationInfo
 }
 
 func (s *Service) UpdateBooking(ctx context.Context, booking entities.Booking) (*entities.Booking, error) {
@@ -81,7 +110,7 @@ func (s *Service) UpdateBooking(ctx context.Context, booking entities.Booking) (
 
 	booking.Reservation.GuestID = updateGuest.GuestID
 
-	booking.Reservation = applyDefaultTimes(booking.Reservation)
+	booking.Reservation.CheckIn, booking.Reservation.CheckOut = applyDefaultTimesIfShould(booking.Reservation.CheckIn, booking.Reservation.CheckOut)
 	booking.Reservation = prepareDaysAndPriceForNight(booking.Reservation)
 
 	updateReservation, err := s.storageReservation.UpdateReservation(ctx, booking.Reservation)
@@ -90,9 +119,24 @@ func (s *Service) UpdateBooking(ctx context.Context, booking entities.Booking) (
 		return nil, err
 	}
 
+	reservationInfo := constructReservationInfo(*updateReservation, booking.ReservationInfo)
+
+	updateReservationInfo, err := s.serviceReservationInfo.UpdateReservationInfoByReservationID(ctx, reservationInfo)
+	if err != nil {
+		zap.L().Error("UpdateBooking: failed to update reservation_info", zap.Error(err))
+		return nil, err
+	}
+
+	// Синхронизируем связанную запись уборки: обновляем время (check_out), комнату и цену уборки.
+	// Поля, которые менеджер заполняет вручную (agent_name, laundry_price, paid и др.), не трогаем.
+	if err = s.syncCleaningAfterReservationUpdate(ctx, updateReservation); err != nil {
+		return nil, err
+	}
+
 	b := entities.Booking{
-		Guest:       *updateGuest,
-		Reservation: *updateReservation,
+		Guest:           *updateGuest,
+		Reservation:     *updateReservation,
+		ReservationInfo: *updateReservationInfo,
 	}
 
 	return &b, nil
@@ -127,7 +171,15 @@ func (s *Service) CreateBooking(ctx context.Context, booking entities.Booking) (
 		return nil, err
 	}
 
-	b := entities.Booking{Guest: *guest, Reservation: *reservation}
+	reservationInfo := constructReservationInfo(*reservation, booking.ReservationInfo)
+
+	info, err := s.serviceReservationInfo.CreateReservationInfo(ctx, reservationInfo)
+	if err != nil {
+		zap.L().Error("CreateBooking: failed to create reservation_info", zap.Error(err))
+		return nil, err
+	}
+
+	b := entities.Booking{Guest: *guest, Reservation: *reservation, ReservationInfo: *info}
 	return &b, nil
 }
 
@@ -136,8 +188,7 @@ func (s *Service) CreateReservation(ctx context.Context, reservation entities.Re
 		return nil, errors.New("uuid is nil")
 	}
 
-	//запишем новое бронирование в бд
-	reservation = applyDefaultTimes(reservation)
+	reservation.CheckIn, reservation.CheckOut = applyDefaultTimesIfShould(reservation.CheckIn, reservation.CheckOut)
 	if reservation.Days == 0 {
 		res := prepareDaysAndPriceForNight(reservation)
 		reservation = res
@@ -147,37 +198,79 @@ func (s *Service) CreateReservation(ctx context.Context, reservation entities.Re
 		zap.L().Debug("CreateReservation", zap.Error(err), zap.Any("booking", reservation))
 		return nil, err
 	}
-
 	if r == nil {
 		return nil, erro.ErrEmptyResultFromDB
 	}
+
+	// Автоматически создаём запись уборки: cleaning_time = время выезда гостя
+	reservationID := r.Oid
+	cleaning := entities.Cleaning{
+		ReservationID: &reservationID,
+		CleaningTime:  r.CheckOut,
+		Room:          r.RoomNumber,
+		CleaningPrice: r.CleaningPrice,
+		LaundryPrice:  0,
+		AgentName:     "Our Apartment",
+		Description:   "",
+		Paid:          true,
+	}
+	_, err = s.storageCleaning.CreateCleaning(ctx, cleaning)
+	if err != nil {
+		zap.L().Error("CreateReservation: failed to create cleaning record", zap.Error(err))
+		return nil, err
+	}
+
 	return r, nil
 }
 
-// applyDefaultTimes устанавливает время по умолчанию, если оно не указано (00:00:00):
-// check_in → 13:00:00, check_out → 11:00:00
-func applyDefaultTimes(reservation entities.Reservation) entities.Reservation {
-	hIn, mIn, sIn := reservation.CheckIn.Clock()
-	hOut, mOut, sOut := reservation.CheckOut.Clock()
+// applyDefaultTimesIfShould устанавливает время по умолчанию, если оно не указано (00:00:00):
+// check_in → 14:00:00, check_out → 11:00:00
+//func applyDefaultTimesIfShould(reservation entities.Reservation) entities.Reservation {
+//	hIn, mIn, sIn := reservation.CheckIn.Clock()
+//	hOut, mOut, sOut := reservation.CheckOut.Clock()
+//
+//	if hIn == 0 && mIn == 0 && sIn == 0 && hOut == 0 && mOut == 0 && sOut == 0 {
+//		reservation.CheckIn = time.Date(
+//			reservation.CheckIn.Year(),
+//			reservation.CheckIn.Month(),
+//			reservation.CheckIn.Day(),
+//			14, 0, 0, 0,
+//			reservation.CheckIn.Location(),
+//		)
+//		reservation.CheckOut = time.Date(
+//			reservation.CheckOut.Year(),
+//			reservation.CheckOut.Month(),
+//			reservation.CheckOut.Day(),
+//			11, 0, 0, 0,
+//			reservation.CheckOut.Location(),
+//		)
+//	}
+//
+//	return reservation
+//}
+
+func applyDefaultTimesIfShould(CheckIn time.Time, CheckOut time.Time) (time.Time, time.Time) {
+	hIn, mIn, sIn := CheckIn.Clock()
+	hOut, mOut, sOut := CheckOut.Clock()
 
 	if hIn == 0 && mIn == 0 && sIn == 0 && hOut == 0 && mOut == 0 && sOut == 0 {
-		reservation.CheckIn = time.Date(
-			reservation.CheckIn.Year(),
-			reservation.CheckIn.Month(),
-			reservation.CheckIn.Day(),
-			13, 0, 0, 0,
-			reservation.CheckIn.Location(),
+		CheckIn = time.Date(
+			CheckIn.Year(),
+			CheckIn.Month(),
+			CheckIn.Day(),
+			14, 0, 0, 0,
+			CheckIn.Location(),
 		)
-		reservation.CheckOut = time.Date(
-			reservation.CheckOut.Year(),
-			reservation.CheckOut.Month(),
-			reservation.CheckOut.Day(),
+		CheckOut = time.Date(
+			CheckOut.Year(),
+			CheckOut.Month(),
+			CheckOut.Day(),
 			11, 0, 0, 0,
-			reservation.CheckOut.Location(),
+			CheckOut.Location(),
 		)
 	}
 
-	return reservation
+	return CheckIn, CheckOut
 }
 
 // что бы не считать в коде стоимость ночи и количество дней нужно отдать это на вычеслении бд (раньше это делала бд в вычесляемых столбцах но при удаление контейнера почему всё пропало хотя и потключены volumes)
@@ -315,13 +408,25 @@ func (s *Service) GetBookingALLForApartment(ctx context.Context, roomNumber stri
 			return nil, err
 		}
 		if guest == nil {
-			zap.L().Error("GetBooking", zap.Error(erro.ErrReservationHasGuestUUIDbutGuestNotFound))
+			zap.L().Error("GetBookingALLForApartment", zap.Error(erro.ErrReservationHasGuestUUIDbutGuestNotFound))
 			return nil, erro.ErrReservationHasGuestUUIDbutGuestNotFound
 		}
-		booking := entities.Booking{
-			Guest:       *guest,
-			Reservation: r,
+
+		rInfo, err := s.serviceReservationInfo.GetReservationInfoByReservationID(ctx, r.Oid)
+		if err != nil {
+			return nil, err
 		}
+		if rInfo == nil {
+			zap.L().Debug("GetBookingALLForApartment: GetReservationInfoByReservationID", zap.Error(erro.ErrEmptyResultFromDB), zap.Int("reservationID", r.Oid))
+			rInfo = new(entities.ReservationInfo)
+		}
+
+		booking := entities.Booking{
+			Guest:           *guest,
+			Reservation:     r,
+			ReservationInfo: *rInfo,
+		}
+
 		bookings = append(bookings, booking)
 	}
 	return bookings, nil
@@ -333,6 +438,18 @@ func (s *Service) GetReservationALLForApartment(ctx context.Context, roomNumber 
 		return nil, err
 	}
 	return reservations, nil
+}
+
+// GetBookingsForRooms загружает все бронирования для списка комнат
+// одним JOIN-запросом вместо N+1 запросов.
+func (s *Service) GetBookingsForRooms(ctx context.Context, roomNumbers []string) ([]entities.Booking, error) {
+	bookings, err := s.storageReservation.GetBookingsForRooms(ctx, roomNumbers)
+	if err != nil {
+		zap.L().Error("GetBookingsForRooms", zap.Error(err), zap.Strings("room_numbers", roomNumbers))
+		return nil, err
+	}
+
+	return bookings, nil
 }
 
 func (s *Service) GetBooking(ctx context.Context, roomNumber string, start string, end string) ([]entities.Booking, error) {
@@ -395,6 +512,50 @@ func (s *Service) GetReservationByPhoneNumber(ctx context.Context, phone string)
 	return bookings, nil
 }
 
+func (s *Service) GetBookingByCheckIn(ctx context.Context, date time.Time) ([]entities.Booking, error) {
+	infos, err := s.serviceReservationInfo.GetReservationInfosByActualCheckIn(ctx, date)
+	if err != nil {
+		return nil, err
+	}
+	return s.buildBookingsFromReservationInfos(ctx, infos)
+}
+
+func (s *Service) GetBookingByCheckOut(ctx context.Context, date time.Time) ([]entities.Booking, error) {
+	infos, err := s.serviceReservationInfo.GetReservationInfosByActualCheckOut(ctx, date)
+	if err != nil {
+		return nil, err
+	}
+	return s.buildBookingsFromReservationInfos(ctx, infos)
+}
+
+// buildBookingsFromReservationInfos собирает []Booking по списку reservation_info:
+// для каждого достаёт резервацию и гостя.
+func (s *Service) buildBookingsFromReservationInfos(ctx context.Context, infos []entities.ReservationInfo) ([]entities.Booking, error) {
+	bookings := make([]entities.Booking, 0, len(infos))
+	for _, ri := range infos {
+		r, err := s.storageReservation.GetReservationByID(ctx, ri.ReservationID)
+		if err != nil {
+			return nil, err
+		}
+		if r == nil {
+			zap.L().Error("buildBookingsFromReservationInfos: reservation not found", zap.Int("reservationID", ri.ReservationID))
+			return nil, erro.ErrEmptyResultFromReservation
+		}
+
+		guest, err := s.storageGuest.ReadGuest(ctx, r.GuestID)
+		if err != nil {
+			return nil, err
+		}
+		if guest == nil {
+			zap.L().Error("buildBookingsFromReservationInfos", zap.Error(erro.ErrReservationHasGuestUUIDbutGuestNotFound))
+			return nil, erro.ErrReservationHasGuestUUIDbutGuestNotFound
+		}
+
+		bookings = append(bookings, entities.Booking{Guest: *guest, Reservation: *r, ReservationInfo: ri})
+	}
+	return bookings, nil
+}
+
 // Оповещение собственика о предстоящем бронирование
 func FutureBooking() {
 
@@ -405,11 +566,11 @@ func FreeApartmentForDates() {
 
 }
 
-func (s *Service) FindTotalPriceForPeriodReport(ctx context.Context, apartments []entities.Apartment, startPeriod, endPeriod string) (map[string]int, error) {
+func (s *Service) FindTotalPriceForPeriodReport(ctx context.Context, apartments []entities.Apartment, start, end time.Time) (map[string]int, error) {
 	m := make(map[string]int)
 
 	for _, apartment := range apartments {
-		price, _, err := s.FindTotalPriceForPeriod(ctx, apartment.RoomNumber, startPeriod, endPeriod)
+		price, _, err := s.FindTotalPriceForPeriod(ctx, apartment.RoomNumber, start, end)
 		if err != nil {
 			return nil, err
 		}
@@ -418,11 +579,52 @@ func (s *Service) FindTotalPriceForPeriodReport(ctx context.Context, apartments 
 	return m, nil
 }
 
-func (s *Service) FindMiddlePriceForPeriodReport(ctx context.Context, apartments []entities.Apartment, startPeriod, endPeriod string) (map[string]int, error) {
+// TotalPriceForPeriodReportXlsx строит xlsx отчёт суммарных цен по каждому апартаменту
+// помесячно за период с startMonth.startYear по endMonth.endYear (включительно).
+func (s *Service) TotalPriceForPeriodReportXlsx(ctx context.Context, apartments []entities.Apartment, startMonth, startYear, endMonth, endYear int) ([]byte, error) {
+	start := time.Date(startYear, time.Month(startMonth), 1, 0, 0, 0, 0, time.UTC)
+	end := time.Date(endYear, time.Month(endMonth), 1, 0, 0, 0, 0, time.UTC)
+
+	if start.After(end) {
+		return nil, erro.ErrStartDateIsNotBeforeEndDate
+	}
+
+	months := make([]time.Time, 0)
+	for month := start; !month.After(end); month = month.AddDate(0, 1, 0) {
+		months = append(months, month)
+	}
+
+	apartmentNames := make([]string, 0, len(apartments))
+	for _, apartment := range apartments {
+		apartmentNames = append(apartmentNames, apartment.RoomNumber)
+	}
+
+	pricesByApartmentAndMonth := make(map[string]map[string]int, len(apartments))
+	for _, monthStart := range months {
+		monthEnd := monthStart.AddDate(0, 1, 0)
+
+		priceMap, err := s.FindTotalPriceForPeriodReport(ctx, apartments, monthStart, monthEnd)
+		if err != nil {
+			return nil, err
+		}
+
+		monthKey := monthStart.Format("01.2006")
+		for apartmentName, price := range priceMap {
+			if pricesByApartmentAndMonth[apartmentName] == nil {
+				pricesByApartmentAndMonth[apartmentName] = make(map[string]int)
+			}
+			pricesByApartmentAndMonth[apartmentName][monthKey] = price
+		}
+	}
+
+	return report.TotalPriceForPeriodReport(pricesByApartmentAndMonth, apartmentNames, months)
+}
+
+func (s *Service) FindMiddlePriceForPeriodReport(ctx context.Context, apartments []entities.Apartment, start, end time.Time) (map[string]int, error) {
 	m := make(map[string]int)
 
 	for _, apartment := range apartments {
-		price, err := s.FindMiddlePriceForPeriod(ctx, apartment.RoomNumber, startPeriod, endPeriod)
+		price, err := s.FindMiddlePriceForPeriod(ctx, apartment.RoomNumber, start, end)
 		if err != nil {
 			return nil, err
 		}
@@ -432,8 +634,8 @@ func (s *Service) FindMiddlePriceForPeriodReport(ctx context.Context, apartments
 }
 
 // цены расчитаные по переуду, к примеру низкий сезон переходящий в высокий
-func (s *Service) FindMiddlePriceForPeriod(ctx context.Context, roomNumber string, startPeriod, endPeriod string) (int, error) {
-	totalSum, totalDays, err := s.FindTotalPriceForPeriod(ctx, roomNumber, startPeriod, endPeriod)
+func (s *Service) FindMiddlePriceForPeriod(ctx context.Context, roomNumber string, start, end time.Time) (int, error) {
+	totalSum, totalDays, err := s.FindTotalPriceForPeriod(ctx, roomNumber, start, end)
 	if err != nil {
 		return 0, err
 	}
@@ -443,15 +645,13 @@ func (s *Service) FindMiddlePriceForPeriod(ctx context.Context, roomNumber strin
 	return totalSum / totalDays, nil
 }
 
-func (s *Service) FindTotalPriceForPeriod(ctx context.Context, roomNumber, startPeriod, endPeriod string) (int, int, error) {
-	start, err := models.TimeConvert(startPeriod)
-	if err != nil {
-		return 0, 0, err
-	}
-	end, err := models.TimeConvert(endPeriod)
-	if err != nil {
-		return 0, 0, err
-	}
+// FindTotalPriceForPeriod считает суммарную выручку и количество ночей по бронированиям
+// апартамента roomNumber, пересекающимся с периодом [start, end).
+// Для каждого бронирования учитывается только та часть ночей, которая попадает в запрошенный
+// период (пересечение [start, end) и [CheckIn, CheckOut)).
+func (s *Service) FindTotalPriceForPeriod(ctx context.Context, roomNumber string, start, end time.Time) (int, int, error) {
+	start = start.Truncate(24 * time.Hour)
+	end = end.Truncate(24 * time.Hour)
 
 	if !start.Before(end) {
 		return 0, 0, erro.ErrStartDateIsNotBeforeEndDate
@@ -468,35 +668,37 @@ func (s *Service) FindTotalPriceForPeriod(ctx context.Context, roomNumber, start
 	var totalSum int
 
 	for _, booking := range bookings {
-		if booking.Price != 0 {
-			switch {
-			// кейс когда чекин раньше start а чекаут раньше end
-			case (start.After(booking.CheckIn) || start.Equal(booking.CheckIn)) && (end.After(booking.CheckOut) || end.Equal(booking.CheckOut)):
-				days := helperForMiddlePrice(booking.CheckOut, start)
-				totalSum += days * booking.PriceForOneNight
-				totalDays += days
-				zap.L().Debug("кейс когда чекин раньше start а чекаут раньше end", zap.Int("days", days), zap.Int("booking.PriceForOneNight", booking.PriceForOneNight))
-			// кейс когда чекаут позже end и чекин позже start
-			case (start.Before(booking.CheckIn) || start.Equal(booking.CheckIn)) && (end.Before(booking.CheckOut) || end.Equal(booking.CheckOut)):
-				days := helperForMiddlePrice(end, booking.CheckIn)
-				totalSum += days * booking.PriceForOneNight
-				totalDays += days
-				zap.L().Debug("кейс когда чекаут позже end и чекин позже start", zap.Int("days", days), zap.Int("booking.PriceForOneNight", booking.PriceForOneNight))
-			// кейс когда чекин и чекаут внутри периуда start и end
-			case (start.Before(booking.CheckIn) || start.Equal(booking.CheckIn)) && (end.After(booking.CheckOut) || end.Equal(booking.CheckOut)):
-				days := helperForMiddlePrice(booking.CheckOut, booking.CheckIn)
-				totalSum += days * booking.PriceForOneNight
-				totalDays += days
-				zap.L().Debug("кейс когда чекин и чекаут внутри периуда start и end", zap.Int("days", days), zap.Int("booking.PriceForOneNight", booking.PriceForOneNight))
-			//кейс когда чекин и чекаут за периудом start и end
-			case (start.After(booking.CheckIn) || start.Equal(booking.CheckIn)) && (end.Before(booking.CheckOut) || end.Equal(booking.CheckOut)):
-				days := helperForMiddlePrice(end, start)
-				totalSum += days * booking.PriceForOneNight
-				totalDays += days
-				zap.L().Debug("кейс когда чекин и чекаут за периудом start и end", zap.Int("days", days), zap.Int("booking.PriceForOneNight", booking.PriceForOneNight))
-			}
+		checkIn := booking.CheckIn.Truncate(24 * time.Hour)
+		checkOut := booking.CheckOut.Truncate(24 * time.Hour)
+
+		if booking.PriceForOneNight == 0 {
+			continue
 		}
 
+		// пересечение периода бронирования [checkIn, checkOut) с запрошенным периодом [start, end)
+		overlapStart := checkIn
+		if start.After(overlapStart) {
+			overlapStart = start
+		}
+		overlapEnd := checkOut
+		if end.Before(overlapEnd) {
+			overlapEnd = end
+		}
+
+		// периоды не пересекаются или пересечение нулевое
+		if !overlapStart.Before(overlapEnd) {
+			continue
+		}
+
+		days := helperForMiddlePrice(overlapEnd, overlapStart)
+		totalSum += days * booking.PriceForOneNight
+		totalDays += days
+
+		zap.L().Debug("FindTotalPriceForPeriod пересечение периодов",
+			zap.String("room_number", roomNumber),
+			zap.Int("days", days),
+			zap.Int("booking.PriceForOneNight", booking.PriceForOneNight),
+		)
 	}
 
 	return totalSum, totalDays, nil
@@ -505,4 +707,28 @@ func (s *Service) FindTotalPriceForPeriod(ctx context.Context, roomNumber, start
 // helperForMiddlePrice result of t-u in days
 func helperForMiddlePrice(t, u time.Time) int {
 	return int(t.Sub(u).Hours() / 24)
+}
+
+// syncCleaningAfterReservationUpdate обновляет связанную запись уборки после изменения резервации.
+// Если записи уборки нет — ничего не делаем.
+func (s *Service) syncCleaningAfterReservationUpdate(ctx context.Context, r *entities.Reservation) error {
+	cleaning, err := s.storageCleaning.GetCleaningByReservationID(ctx, r.Oid)
+	if err != nil {
+		zap.L().Error("syncCleaningAfterReservationUpdate: GetCleaningByReservationID", zap.Error(err))
+		return err
+	}
+	if cleaning == nil {
+		return nil
+	}
+
+	cleaning.CleaningTime = r.CheckOut
+	cleaning.Room = r.RoomNumber
+	cleaning.CleaningPrice = r.CleaningPrice
+
+	_, err = s.storageCleaning.UpdateCleaning(ctx, *cleaning)
+	if err != nil {
+		zap.L().Error("syncCleaningAfterReservationUpdate: UpdateCleaning", zap.Error(err))
+		return err
+	}
+	return nil
 }

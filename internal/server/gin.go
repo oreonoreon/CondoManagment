@@ -6,18 +6,33 @@ import (
 	"awesomeProject/internal/services"
 	"database/sql"
 	"errors"
+	"net/http"
+	"strconv"
+	"time"
+
 	"github.com/antonlindstrom/pgstore"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
-	"net/http"
-	"strconv"
-	"time"
 )
 
 type SpecialStore struct {
 	*pgstore.PGStore
+}
+
+// sameSiteString переводит http.SameSite в читаемую строку для логов.
+func sameSiteString(s http.SameSite) string {
+	switch s {
+	case http.SameSiteNoneMode:
+		return "None"
+	case http.SameSiteLaxMode:
+		return "Lax"
+	case http.SameSiteStrictMode:
+		return "Strict"
+	default:
+		return "Default"
+	}
 }
 
 func (s SpecialStore) Options(options sessions.Options) {
@@ -77,6 +92,15 @@ func Gin(h Handle) {
 	store.Options(cookieOptions)
 	router.Use(sessions.Sessions("sess", store))
 
+	// Явно логируем реально применённые настройки, влияющие на куки/CORS,
+	// чтобы на проде (Railway) сразу было видно, что подхватилось из ENV.
+	zap.L().Info("Session/CORS runtime settings",
+		zap.Bool("IsProduction", h.cfg.IsProduction),
+		zap.String("FrontURL", h.cfg.FrontURL),
+		zap.Bool("CookieSecure", cookieOptions.Secure),
+		zap.String("CookieSameSite", sameSiteString(cookieOptions.SameSite)),
+	)
+
 	router.POST("/login", h.LoginHandler)
 
 	// Защищённые маршруты
@@ -89,15 +113,20 @@ func Gin(h Handle) {
 		api.POST("/sync", h.SynchroniseBookings)
 		api.GET("/ExcelRes", h.ExcelBookings)
 		api.POST("/ExcelRes", h.ExcelBookings)
-		api.GET("/middleprice", h.MiddlePriceForPeriod)
-		api.POST("/middleprice", h.MiddlePriceForPeriod)
-		api.GET("/middlepriceReport", h.MiddlePriceForPeriodReport)
-		api.POST("/middlepriceReport", h.MiddlePriceForPeriodReport)
-		api.GET("/totalpriceReport", h.TotalPriceForPeriodReport)
+		//api.GET("/middleprice", h.MiddlePriceForPeriod)
+		//api.POST("/middleprice", h.MiddlePriceForPeriod)
+		//api.GET("/middlepriceReport", h.MiddlePriceForPeriodReport)
+		//api.POST("/middlepriceReport", h.MiddlePriceForPeriodReport)
+
 		api.POST("/totalpriceReport", h.TotalPriceForPeriodReport)
+		api.POST("/totalpriceReportXlsx", h.TotalPriceForPeriodReportXlsx)
 		api.POST("/report", h.Report)
-		api.POST("/r", h.BookingsPost)
-		api.POST("/rall", h.AllBookingsPost)
+
+		//depricated
+		//api.POST("/r", h.BookingsPost)
+		//api.POST("/rall", h.AllBookingsPost)
+
+		api.POST("/rall", h.AllBookingsPostNEW)
 		api.GET("/r", h.ApartmentsGet)
 		api.PATCH("/updateBooking", h.UpdateBooking)
 		api.POST("/createBooking", h.CreateBookingPost)
@@ -105,6 +134,26 @@ func Gin(h Handle) {
 		api.POST("/BnB", h.ScrapBnBPost)
 		api.POST("/BnB/locationName", h.ScrapBnBLocationNameUpdate)
 		api.POST("/BnB/room", h.ScrapBnbRoomUnderstandableTypePatch)
+
+		// Bookings by date
+		api.GET("/bookings/check-in/:date", h.GetBookingsByCheckIn)
+		api.GET("/bookings/check-out/:date", h.GetBookingsByCheckOut)
+
+		// Cleaning CRUD
+		api.GET("/cleaning", h.GetAllCleaning)
+		api.GET("/cleaning/date/:date", h.GetCleaningByDate)
+		api.GET("/cleaning/:id", h.GetCleaningByID)
+		api.POST("/cleaning", h.CreateCleaning)
+		api.PATCH("/cleaning/:id", h.UpdateCleaning)
+		api.DELETE("/cleaning/:id", h.DeleteCleaning)
+
+		// ReservationInfo
+		api.PATCH("/reservation-info/:id", h.UpdateReservationInfo)
+
+		// Statuses
+		api.GET("/status-types", h.GetStatusTypes)
+		api.GET("/reservations/:id/statuses", h.GetReservationStatuses)
+		api.POST("/reservations/:id/statuses/:statusTypeId", h.ToggleReservationStatus)
 	}
 
 	router.Run(":8080")
@@ -234,23 +283,24 @@ type BookingsGetRequest struct {
 	RoomNumber string `json:"room_number"`
 }
 
-func (h *Handle) BookingsPost(c *gin.Context) {
-	request := new(BookingsGetRequest)
-	err := c.BindJSON(request)
-	if err != nil {
-		c.String(http.StatusBadRequest, err.Error())
-		return
-	}
-
-	bookings, err := h.TransactionalService.GetBookingALLForApartment(c.Request.Context(), request.RoomNumber)
-	if err != nil {
-		c.String(http.StatusInternalServerError, err.Error())
-		return
-	}
-	c.IndentedJSON(http.StatusOK, gin.H{
-		"bookings": bookings,
-	})
-}
+//depricated
+//func (h *Handle) BookingsPost(c *gin.Context) {
+//	request := new(BookingsGetRequest)
+//	err := c.BindJSON(request)
+//	if err != nil {
+//		c.String(http.StatusBadRequest, err.Error())
+//		return
+//	}
+//
+//	bookings, err := h.TransactionalService.GetBookingALLForApartment(c.Request.Context(), request.RoomNumber)
+//	if err != nil {
+//		c.String(http.StatusInternalServerError, err.Error())
+//		return
+//	}
+//	c.IndentedJSON(http.StatusOK, gin.H{
+//		"bookings": bookings,
+//	})
+//}
 
 type AllBookingsGetRequest struct {
 	RoomNumbers []string `json:"room_numbers"`
@@ -275,24 +325,41 @@ func (h *Handle) AllBookingsPost(c *gin.Context) {
 	})
 }
 
-func (h *Handle) MiddlePriceForPeriod(c *gin.Context) {
-	if c.Request.Method == http.MethodGet {
-		c.HTML(http.StatusOK, "middleprice.html", nil)
+func (h *Handle) AllBookingsPostNEW(c *gin.Context) {
+	request := new(AllBookingsGetRequest)
+	if err := c.BindJSON(request); err != nil {
+		c.String(http.StatusBadRequest, err.Error())
 		return
 	}
 
-	roomNumber := c.PostForm("room_number")
-	start := c.PostForm("start")
-	end := c.PostForm("end")
-
-	price, err := h.TransactionalService.FindMiddlePriceForPeriod(c.Request.Context(), roomNumber, start, end)
+	bookings, err := h.TransactionalService.GetBookingsForRooms(c.Request.Context(), request.RoomNumbers)
 	if err != nil {
-		zap.L().Error("FindMiddlePriceForPeriod", zap.Error(err))
 		c.String(http.StatusInternalServerError, err.Error())
 		return
 	}
-	c.String(http.StatusOK, strconv.Itoa(price))
+	c.IndentedJSON(http.StatusOK, gin.H{
+		"bookings": bookings,
+	})
 }
+
+//func (h *Handle) MiddlePriceForPeriod(c *gin.Context) {
+//	if c.Request.Method == http.MethodGet {
+//		c.HTML(http.StatusOK, "middleprice.html", nil)
+//		return
+//	}
+//
+//	roomNumber := c.PostForm("room_number")
+//	start := c.PostForm("start")
+//	end := c.PostForm("end")
+//
+//	price, err := h.TransactionalService.FindMiddlePriceForPeriod(c.Request.Context(), roomNumber, start, end)
+//	if err != nil {
+//		zap.L().Error("FindMiddlePriceForPeriod", zap.Error(err))
+//		c.String(http.StatusInternalServerError, err.Error())
+//		return
+//	}
+//	c.String(http.StatusOK, strconv.Itoa(price))
+//}
 
 func (h *Handle) SynchroniseBookings(c *gin.Context) {
 	if c.Request.Method == http.MethodGet {

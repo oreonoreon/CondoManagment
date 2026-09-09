@@ -1,7 +1,6 @@
 package telegram
 
 import (
-	"awesomeProject/internal/myLogger"
 	"flag"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"go.uber.org/zap"
@@ -48,13 +47,13 @@ func newBot() tgbotapi.UpdatesChannel {
 		}
 
 		if info.LastErrorDate != 0 {
-			myLogger.Logger.Printf("Telegram callback failed: %s", info.LastErrorMessage)
+			zap.L().Error("Telegram callback failed", zap.String("error", info.LastErrorMessage))
 		}
 
 		updates := bot.ListenForWebhook("/")
 		go func() {
 			if err := http.ListenAndServe(":"+os.Getenv("PORT"), nil); err != nil {
-				myLogger.Logger.Fatal(err)
+				zap.L().Fatal("ListenAndServe", zap.Error(err))
 			}
 		}()
 		return updates

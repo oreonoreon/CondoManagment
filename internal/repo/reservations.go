@@ -257,6 +257,191 @@ func (db *Repository) FindBookingByGuestUUID(ctx context.Context, uuid uuid.UUID
 	return nil, nil
 }
 
+func (db *Repository) GetReservationsByCheckIn(ctx context.Context, date time.Time) ([]entities.Reservation, error) {
+	runner := getRunner(ctx, db.PostgreSQL)
+	rows, err := runner.QueryContext(ctx,
+		"SELECT * FROM reservations WHERE DATE(check_in) = $1 ORDER BY check_in",
+		date.Format("2006-01-02"),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	reservations := make([]entities.Reservation, 0)
+	for rows.Next() {
+		var r entities.Reservation
+		if err := rows.Scan(
+			&r.Oid, &r.RoomNumber, &r.GuestID,
+			&r.CheckIn, &r.CheckOut, &r.Price, &r.CleaningPrice,
+			&r.ElectricityAndWaterPayment, &r.Adult, &r.Children,
+			&r.Description, &r.Days, &r.PriceForOneNight,
+		); err != nil {
+			return nil, err
+		}
+		reservations = append(reservations, r)
+	}
+	return reservations, rows.Err()
+}
+
+func (db *Repository) GetReservationsByCheckOut(ctx context.Context, date time.Time) ([]entities.Reservation, error) {
+	runner := getRunner(ctx, db.PostgreSQL)
+	rows, err := runner.QueryContext(ctx,
+		"SELECT * FROM reservations WHERE DATE(check_out) = $1 ORDER BY check_out",
+		date.Format("2006-01-02"),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	reservations := make([]entities.Reservation, 0)
+	for rows.Next() {
+		var r entities.Reservation
+		if err := rows.Scan(
+			&r.Oid, &r.RoomNumber, &r.GuestID,
+			&r.CheckIn, &r.CheckOut, &r.Price, &r.CleaningPrice,
+			&r.ElectricityAndWaterPayment, &r.Adult, &r.Children,
+			&r.Description, &r.Days, &r.PriceForOneNight,
+		); err != nil {
+			return nil, err
+		}
+		reservations = append(reservations, r)
+	}
+	return reservations, rows.Err()
+}
+
+// GetBookingsForRooms загружает все бронирования для списка комнат
+// одним JOIN-запросом вместо N+1 запросов.
+func (db *Repository) GetBookingsForRooms(ctx context.Context, roomNumbers []string) ([]entities.Booking, error) {
+	runner := getRunner(ctx, db.PostgreSQL)
+
+	query := `
+		SELECT
+			r.id, r.room_number, r.guest_id, r.check_in, r.check_out, r.price,
+			r.cleaning_price, r.electricity_and_water_payment, r.adult, r.children,
+			r.description, r.days, r.price_for_night,
+			g.guest_id, g.name, g.phone, g.description,
+			ri.id, ri.reservation_id, ri.deposit, ri.deposit_currency, ri.prepayment,
+			ri.payment_on_checkin, ri.actual_check_in, ri.actual_check_out
+		FROM Reservations r
+		JOIN Guests g ON r.guest_id = g.guest_id
+		LEFT JOIN reservation_info ri ON r.id = ri.reservation_id
+		WHERE r.room_number = ANY($1)
+		ORDER BY r.check_in`
+
+	rows, err := runner.QueryContext(ctx, query, pq.Array(roomNumbers))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	bookings := make([]entities.Booking, 0, 100)
+	for rows.Next() {
+		var b entities.Booking
+		var gPhone sql.NullString
+		var riID, riReservationID, riDeposit, riPrepayment, riPaymentOnCheckin sql.NullInt64
+		var riDepositCurrency sql.NullString
+		var riActualCheckIn, riActualCheckOut sql.NullTime
+
+		if err := rows.Scan(
+			&b.Reservation.Oid, &b.Reservation.RoomNumber, &b.Reservation.GuestID,
+			&b.Reservation.CheckIn, &b.Reservation.CheckOut, &b.Reservation.Price,
+			&b.Reservation.CleaningPrice, &b.Reservation.ElectricityAndWaterPayment,
+			&b.Reservation.Adult, &b.Reservation.Children, &b.Reservation.Description,
+			&b.Reservation.Days, &b.Reservation.PriceForOneNight,
+			&b.Guest.GuestID, &b.Guest.Name, &gPhone, &b.Guest.Description,
+			&riID, &riReservationID, &riDeposit, &riDepositCurrency,
+			&riPrepayment, &riPaymentOnCheckin, &riActualCheckIn, &riActualCheckOut,
+		); err != nil {
+			return nil, err
+		}
+
+		if gPhone.Valid {
+			b.Guest.Phone = gPhone.String
+		}
+		if riID.Valid {
+			b.ReservationInfo = entities.ReservationInfo{
+				ID:               int(riID.Int64),
+				ReservationID:    int(riReservationID.Int64),
+				Deposit:          int(riDeposit.Int64),
+				DepositCurrency:  riDepositCurrency.String,
+				Prepayment:       int(riPrepayment.Int64),
+				PaymentOnCheckin: int(riPaymentOnCheckin.Int64),
+				ActualCheckIn:    riActualCheckIn.Time,
+				ActualCheckOut:   riActualCheckOut.Time,
+			}
+		}
+
+		bookings = append(bookings, b)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	if err := db.attachStatusesToBookings(ctx, runner, bookings); err != nil {
+		return nil, err
+	}
+
+	return bookings, nil
+}
+
+// attachStatusesToBookings одним запросом подгружает активные статусы для всех переданных броней
+// и раскладывает их по соответствующим Booking.Statuses (избегая N+1).
+func (db *Repository) attachStatusesToBookings(ctx context.Context, runner queryer, bookings []entities.Booking) error {
+	if len(bookings) == 0 {
+		return nil
+	}
+
+	reservationIDs := make([]int, 0, len(bookings))
+	for _, b := range bookings {
+		reservationIDs = append(reservationIDs, b.Reservation.Oid)
+	}
+
+	query := `SELECT rs.id, rs.reservation_id, rs.status_type_id, rs.is_active, rs.set_by, rs.set_at, rs.removed_at,
+			st.code, st.name, st.color
+		FROM reservation_statuses rs
+		JOIN status_types st ON st.id = rs.status_type_id
+		WHERE rs.reservation_id = ANY($1) AND rs.is_active = TRUE
+		ORDER BY st.sort_order`
+
+	rows, err := runner.QueryContext(ctx, query, pq.Array(reservationIDs))
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	statusesByReservation := make(map[int][]entities.ReservationStatus)
+	for rows.Next() {
+		var rs entities.ReservationStatus
+		var setBy sql.NullString
+		var removedAt sql.NullTime
+		if err := rows.Scan(
+			&rs.ID, &rs.ReservationID, &rs.StatusTypeID, &rs.IsActive, &setBy, &rs.SetAt, &removedAt,
+			&rs.StatusCode, &rs.StatusName, &rs.StatusColor,
+		); err != nil {
+			return err
+		}
+		if setBy.Valid {
+			if id, err := parseUUID(setBy.String); err == nil {
+				rs.SetBy = &id
+			}
+		}
+		if removedAt.Valid {
+			rs.RemovedAt = &removedAt.Time
+		}
+		statusesByReservation[rs.ReservationID] = append(statusesByReservation[rs.ReservationID], rs)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	for i := range bookings {
+		bookings[i].Statuses = statusesByReservation[bookings[i].Reservation.Oid]
+	}
+	return nil
+}
+
 // Ошибки Postgres → доменные
 func translatePQ(err error) error {
 	var pqe *pq.Error

@@ -38,7 +38,7 @@ func Test_synchronizeSliceFromDBandExcel(t *testing.T) {
 
 	serviceExcel := services.NewServiceExcel(
 		mockStorageSettings,
-		services.NewService(mockStorageReservation, mockStorageGuest),
+		services.NewService(mockStorageReservation, mockStorageGuest, new(MockStorageCleaning)),
 	)
 
 	var bookingsFromExcel = []entities.Booking{
