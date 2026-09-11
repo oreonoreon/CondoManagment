@@ -75,18 +75,17 @@ func Gin(h Handle) {
 	store := SpecialStore{notSpesialStore}
 	//-----------------------------------------------------------------------------
 
-	//настройки cookies в зависимости от окружения
+	// Настройки cookies. Frontend теперь всегда обращается к бэкенду через
+	// собственный reverse-proxy (тот же origin), поэтому SameSite=Lax
+	// достаточно и в dev, и в production — это same-site (и чаще даже
+	// same-origin) запрос, а Lax не блокируется ITP/Safari в отличие от None.
+	// Secure остаётся завязан на production, т.к. там всегда HTTPS.
 	cookieOptions := sessions.Options{
 		Path:     "/",
 		MaxAge:   60 * 60 * 24, // 24 часа
 		HttpOnly: true,
-		Secure:   h.cfg.IsProduction,   // true только в production с HTTPS
-		SameSite: http.SameSiteLaxMode, // для разработки Lax, для production можно None
-	}
-
-	// Если production и используется cross-origin, нужен SameSite=None
-	if h.cfg.IsProduction {
-		cookieOptions.SameSite = http.SameSiteNoneMode
+		Secure:   h.cfg.IsProduction, // true только в production с HTTPS
+		SameSite: http.SameSiteLaxMode,
 	}
 
 	store.Options(cookieOptions)

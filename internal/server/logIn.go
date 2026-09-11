@@ -82,17 +82,14 @@ func (h *Handle) LogoutHandler(c *gin.Context) {
 	session := sessions.Default(c)
 	session.Clear()
 
-	// ИСПРАВЛЕНИЕ: используем те же настройки, что и при создании
+	// Настройки должны совпадать с теми, что использовались при создании
+	// куки в Gin() — иначе браузер не сможет корректно её удалить.
 	cookieOptions := sessions.Options{
 		Path:     "/",
 		MaxAge:   -1, // удаляем cookie
 		HttpOnly: true,
 		Secure:   h.cfg.IsProduction,
 		SameSite: http.SameSiteLaxMode,
-	}
-
-	if h.cfg.IsProduction {
-		cookieOptions.SameSite = http.SameSiteNoneMode
 	}
 
 	session.Options(cookieOptions)
