@@ -24,6 +24,9 @@ func (h *Handle) Report(c *gin.Context) {
 		c.String(http.StatusBadRequest, err.Error())
 		return
 	}
+	if !h.requireRooms(c, request.RoomNumber) {
+		return
+	}
 
 	fileData, err := h.TransactionalService.CreateReport(c.Request.Context(), request.RoomNumber, request.Start, request.End)
 	if err != nil {

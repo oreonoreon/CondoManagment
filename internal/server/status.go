@@ -28,6 +28,9 @@ func (h *Handle) GetReservationStatuses(c *gin.Context) {
 		c.String(http.StatusBadRequest, "invalid id: "+err.Error())
 		return
 	}
+	if !h.requireReservation(c, reservationID) {
+		return
+	}
 
 	statuses, err := h.TransactionalService.GetReservationStatuses(c.Request.Context(), reservationID)
 	if err != nil {
@@ -49,6 +52,9 @@ func (h *Handle) ToggleReservationStatus(c *gin.Context) {
 	statusTypeID, err := strconv.Atoi(c.Param("statusTypeId"))
 	if err != nil {
 		c.String(http.StatusBadRequest, "invalid statusTypeId: "+err.Error())
+		return
+	}
+	if !h.requireReservation(c, reservationID) {
 		return
 	}
 

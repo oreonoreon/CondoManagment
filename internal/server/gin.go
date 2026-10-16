@@ -60,12 +60,7 @@ func Gin(h Handle) {
 		panic(err)
 	}
 
-	//store, err := postgres.NewStore(db, []byte("везде жопа лысого ПОПУГАЯ!"))
-	//if err != nil {
-	//	panic(err)
-	//}
-
-	notSpesialStore, err := pgstore.NewPGStoreFromPool(db, []byte("везде жопа лысого ПОПУГАЯ!"))
+	notSpesialStore, err := pgstore.NewPGStoreFromPool(db, []byte(h.cfg.SessionSecret))
 	if err != nil {
 		panic(err)
 	}
@@ -106,7 +101,7 @@ func Gin(h Handle) {
 	api := router.Group("/calendar")
 	api.Use(SessionAuthMiddleware())
 	{
-		api.POST("/createUser", h.CreateUser)
+		api.POST("/createUser", RequireRole(roleAdmin), h.CreateUser)
 		api.POST("/logout", h.LogoutHandler)
 		api.GET("/sync", h.SynchroniseBookings)
 		api.POST("/sync", h.SynchroniseBookings)
@@ -166,7 +161,8 @@ type Handle struct {
 	*services.ServiceApartment
 	*services.ServiceBnB
 	*services.ServiceUsers
-	cfg *config.ConfigEnv // добавляем поле конфига
+	access *services.ServiceAccess // не встраиваем, чтобы не конфликтовали имена методов
+	cfg    *config.ConfigEnv       // добавляем поле конфига
 }
 
 func NewHandle(
@@ -177,6 +173,7 @@ func NewHandle(
 	serviceApartment *services.ServiceApartment,
 	servicesBnB *services.ServiceBnB,
 	servicesUsers *services.ServiceUsers,
+	serviceAccess *services.ServiceAccess,
 	cfg *config.ConfigEnv) Handle {
 	return Handle{
 		serviceReservation,
@@ -186,6 +183,7 @@ func NewHandle(
 		serviceApartment,
 		servicesBnB,
 		servicesUsers,
+		serviceAccess,
 		cfg,
 	}
 }
@@ -197,6 +195,10 @@ func (h *Handle) UpdateBooking(c *gin.Context) {
 	if err != nil {
 		zap.L().Error("UpdateBooking", zap.Error(err))
 		c.String(http.StatusBadRequest, err.Error())
+		return
+	}
+	// проверяем и текущий апартамент брони, и тот, на который её переносят
+	if !h.requireReservation(c, request.Reservation.Oid) || !h.requireRooms(c, request.Reservation.RoomNumber) {
 		return
 	}
 	booking, err := h.TransactionalService.UpdateBooking(c.Request.Context(), *request)
@@ -213,6 +215,9 @@ func (h *Handle) DeleteBookingByID(c *gin.Context) {
 	if err != nil {
 		zap.L().Error("DeleteBookingByID", zap.Error(err))
 		c.String(http.StatusBadRequest, err.Error())
+		return
+	}
+	if !h.requireReservation(c, id) {
 		return
 	}
 
@@ -233,10 +238,8 @@ func (h *Handle) CreateBookingPost(c *gin.Context) {
 		c.String(http.StatusBadRequest, err.Error())
 		return
 	}
-	if request == nil {
-		erro := errors.New("request contain error")
-		zap.L().Error("CreateBookingPost", zap.Error(erro))
-		c.String(http.StatusBadRequest, erro.Error())
+	if !h.requireRooms(c, request.Reservation.RoomNumber) {
+		return
 	}
 
 	booking, err := h.TransactionalService.CreateBooking(c.Request.Context(), *request)
@@ -331,7 +334,13 @@ func (h *Handle) AllBookingsPostNEW(c *gin.Context) {
 		return
 	}
 
-	bookings, err := h.TransactionalService.GetBookingsForRooms(c.Request.Context(), request.RoomNumbers)
+	access, ok := h.roomAccess(c)
+	if !ok {
+		return
+	}
+	roomNumbers := filterByRoom(access, request.RoomNumbers, func(room string) string { return room })
+
+	bookings, err := h.TransactionalService.GetBookingsForRooms(c.Request.Context(), roomNumbers)
 	if err != nil {
 		c.String(http.StatusInternalServerError, err.Error())
 		return

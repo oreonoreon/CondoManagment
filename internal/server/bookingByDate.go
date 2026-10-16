@@ -1,11 +1,14 @@
 package server
 
 import (
+	"awesomeProject/internal/entities"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 	"net/http"
 	"time"
 )
+
+func bookingRoom(b entities.Booking) string { return b.Reservation.RoomNumber }
 
 // GetBookingsByCheckIn GET /calendar/bookings/check-in/:date
 // Возвращает слайс Booking у которых дата check_in совпадает с указанной.
@@ -15,13 +18,17 @@ func (h *Handle) GetBookingsByCheckIn(c *gin.Context) {
 	if !ok {
 		return
 	}
+	access, ok := h.roomAccess(c)
+	if !ok {
+		return
+	}
 	bookings, err := h.TransactionalService.GetBookingByCheckIn(c.Request.Context(), date)
 	if err != nil {
 		zap.L().Error("GetBookingsByCheckIn", zap.Error(err))
 		c.String(http.StatusInternalServerError, err.Error())
 		return
 	}
-	c.IndentedJSON(http.StatusOK, bookings)
+	c.IndentedJSON(http.StatusOK, filterByRoom(access, bookings, bookingRoom))
 }
 
 // GetBookingsByCheckOut GET /calendar/bookings/check-out/:date
@@ -32,13 +39,17 @@ func (h *Handle) GetBookingsByCheckOut(c *gin.Context) {
 	if !ok {
 		return
 	}
+	access, ok := h.roomAccess(c)
+	if !ok {
+		return
+	}
 	bookings, err := h.TransactionalService.GetBookingByCheckOut(c.Request.Context(), date)
 	if err != nil {
 		zap.L().Error("GetBookingsByCheckOut", zap.Error(err))
 		c.String(http.StatusInternalServerError, err.Error())
 		return
 	}
-	c.IndentedJSON(http.StatusOK, bookings)
+	c.IndentedJSON(http.StatusOK, filterByRoom(access, bookings, bookingRoom))
 }
 
 // parseDateParam парсит параметр :date формата YYYY-MM-DD из пути.
