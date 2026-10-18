@@ -36,6 +36,9 @@ func RequireRole(role string) gin.HandlerFunc {
 	}
 }
 
+// Уборки (/calendar/cleaning) намеренно не ограничиваются по apartments.access:
+// любая роль видит и редактирует уборки по любым комнатам, включая отсутствующие в apartments.
+
 // roomAccess возвращает закрытые для роли пользователя апартаменты (кешируется на время запроса).
 // При ошибке сам пишет ответ и возвращает false.
 func (h *Handle) roomAccess(c *gin.Context) (services.RoomAccess, bool) {
