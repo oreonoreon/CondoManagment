@@ -44,6 +44,7 @@ func newTestRouter(role string) *gin.Engine {
 		}
 	})
 	r.POST("/createUser", RequireRole(roleAdmin), func(c *gin.Context) { c.Status(http.StatusCreated) })
+	r.GET("/cleaning", RequireRole(roleAdmin, roleManager), func(c *gin.Context) { c.Status(http.StatusOK) })
 	r.GET("/room/:room", func(c *gin.Context) {
 		if h.requireRooms(c, c.Param("room")) {
 			c.Status(http.StatusOK)
@@ -74,6 +75,11 @@ func TestRequireRole(t *testing.T) {
 	assert.Equal(t, http.StatusCreated, do(newTestRouter("admin"), http.MethodPost, "/createUser").Code)
 	assert.Equal(t, http.StatusForbidden, do(newTestRouter("manager"), http.MethodPost, "/createUser").Code)
 	assert.Equal(t, http.StatusUnauthorized, do(newTestRouter(""), http.MethodPost, "/createUser").Code)
+
+	// несколько допустимых ролей
+	assert.Equal(t, http.StatusOK, do(newTestRouter("admin"), http.MethodGet, "/cleaning").Code)
+	assert.Equal(t, http.StatusOK, do(newTestRouter("manager"), http.MethodGet, "/cleaning").Code)
+	assert.Equal(t, http.StatusForbidden, do(newTestRouter("owner"), http.MethodGet, "/cleaning").Code)
 }
 
 func TestRequireRooms(t *testing.T) {

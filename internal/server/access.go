@@ -3,31 +3,33 @@ package server
 import (
 	"awesomeProject/internal/services"
 	"net/http"
+	"slices"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
 
 const (
-	roleAdmin = "admin"
+	roleAdmin   = "admin"
+	roleManager = "manager"
 
 	roomAccessContextKey = "roomAccess"
 	errForbiddenRoom     = "access to this apartment is denied"
 )
 
-// RequireRole пропускает запрос только для пользователей с указанной ролью.
-func RequireRole(role string) gin.HandlerFunc {
+// RequireRole пропускает запрос только для пользователей с одной из указанных ролей.
+func RequireRole(roles ...string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		roleStr, err := getRoleFromContext(c)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 			return
 		}
-		if roleStr != role {
+		if !slices.Contains(roles, roleStr) {
 			zap.L().Warn("RequireRole: access denied",
 				zap.String("path", c.Request.URL.Path),
 				zap.String("role", roleStr),
-				zap.String("required", role),
+				zap.Strings("required", roles),
 			)
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "insufficient permissions"})
 			return
@@ -36,8 +38,9 @@ func RequireRole(role string) gin.HandlerFunc {
 	}
 }
 
-// Уборки (/calendar/cleaning) намеренно не ограничиваются по apartments.access:
-// любая роль видит и редактирует уборки по любым комнатам, включая отсутствующие в apartments.
+// Уборки (/calendar/cleaning) доступны только ролям admin и manager (см. Gin), но намеренно
+// не ограничиваются по apartments.access: эти роли видят и редактируют уборки по любым комнатам,
+// включая отсутствующие в apartments.
 
 // roomAccess возвращает закрытые для роли пользователя апартаменты (кешируется на время запроса).
 // При ошибке сам пишет ответ и возвращает false.

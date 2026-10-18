@@ -133,13 +133,14 @@ func Gin(h Handle) {
 		api.GET("/bookings/check-in/:date", h.GetBookingsByCheckIn)
 		api.GET("/bookings/check-out/:date", h.GetBookingsByCheckOut)
 
-		// Cleaning CRUD
-		api.GET("/cleaning", h.GetAllCleaning)
-		api.GET("/cleaning/date/:date", h.GetCleaningByDate)
-		api.GET("/cleaning/:id", h.GetCleaningByID)
-		api.POST("/cleaning", h.CreateCleaning)
-		api.PATCH("/cleaning/:id", h.UpdateCleaning)
-		api.DELETE("/cleaning/:id", h.DeleteCleaning)
+		// Cleaning CRUD — только admin и manager, без ограничения по апартаментам
+		cleaning := api.Group("/cleaning", RequireRole(roleAdmin, roleManager))
+		cleaning.GET("", h.GetAllCleaning)
+		cleaning.GET("/date/:date", h.GetCleaningByDate)
+		cleaning.GET("/:id", h.GetCleaningByID)
+		cleaning.POST("", h.CreateCleaning)
+		cleaning.PATCH("/:id", h.UpdateCleaning)
+		cleaning.DELETE("/:id", h.DeleteCleaning)
 
 		// ReservationInfo
 		api.PATCH("/reservation-info/:id", h.UpdateReservationInfo)
