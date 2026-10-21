@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+
+	"github.com/google/uuid"
 )
 
 // ReadForbiddenRooms возвращает номера апартаментов, к которым у роли нет доступа
@@ -53,4 +55,26 @@ func (db *Repository) readRoom(ctx context.Context, query string, id int) (strin
 		return "", false, err
 	}
 	return room, true, nil
+}
+
+// ReadOwnedRooms возвращает номера апартаментов, владельцем которых является пользователь.
+func (db *Repository) ReadOwnedRooms(ctx context.Context, userID uuid.UUID) ([]string, error) {
+	rows, err := db.PostgreSQL.QueryContext(ctx,
+		"SELECT room_number FROM apartment_owners WHERE user_id = $1",
+		userID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	rooms := make([]string, 0)
+	for rows.Next() {
+		var room string
+		if err := rows.Scan(&room); err != nil {
+			return nil, err
+		}
+		rooms = append(rooms, room)
+	}
+	return rooms, rows.Err()
 }

@@ -28,7 +28,11 @@ func (h *Handle) GetBookingsByCheckIn(c *gin.Context) {
 		c.String(http.StatusInternalServerError, err.Error())
 		return
 	}
-	c.IndentedJSON(http.StatusOK, filterByRoom(access, bookings, bookingRoom))
+	view, ok := bookingsViewFor(c, filterByRoom(access, bookings, bookingRoom))
+	if !ok {
+		return
+	}
+	c.IndentedJSON(http.StatusOK, view)
 }
 
 // GetBookingsByCheckOut GET /calendar/bookings/check-out/:date
@@ -49,7 +53,11 @@ func (h *Handle) GetBookingsByCheckOut(c *gin.Context) {
 		c.String(http.StatusInternalServerError, err.Error())
 		return
 	}
-	c.IndentedJSON(http.StatusOK, filterByRoom(access, bookings, bookingRoom))
+	view, ok := bookingsViewFor(c, filterByRoom(access, bookings, bookingRoom))
+	if !ok {
+		return
+	}
+	c.IndentedJSON(http.StatusOK, view)
 }
 
 // parseDateParam парсит параметр :date формата YYYY-MM-DD из пути.

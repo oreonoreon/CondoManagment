@@ -1,65 +1,83 @@
 package server
 
 import (
+	"awesomeProject/internal/entities"
 	"awesomeProject/internal/services"
 	"net/http"
-	"slices"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
 
 const (
-	roleAdmin   = "admin"
-	roleManager = "manager"
-
-	roomAccessContextKey = "roomAccess"
-	errForbiddenRoom     = "access to this apartment is denied"
+	currentUserContextKey = "currentUser"
+	roomAccessContextKey  = "roomAccess"
+	errForbiddenRoom      = "access to this apartment is denied"
 )
 
-// RequireRole пропускает запрос только для пользователей с одной из указанных ролей.
-func RequireRole(roles ...string) gin.HandlerFunc {
+// currentUser возвращает пользователя запроса, загруженного SessionAuthMiddleware.
+func currentUser(c *gin.Context) (entities.CurrentUser, bool) {
+	value, ok := c.Get(currentUserContextKey)
+	if !ok {
+		return entities.CurrentUser{}, false
+	}
+	user, ok := value.(entities.CurrentUser)
+	return user, ok
+}
+
+// mustCurrentUser — как currentUser, но при отсутствии пользователя пишет 401.
+func mustCurrentUser(c *gin.Context) (entities.CurrentUser, bool) {
+	user, ok := currentUser(c)
+	if !ok {
+		c.String(http.StatusUnauthorized, "authentication required")
+	}
+	return user, ok
+}
+
+// RequirePermission пропускает запрос, только если у роли пользователя есть все указанные права.
+func RequirePermission(permissions ...string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		roleStr, err := getRoleFromContext(c)
-		if err != nil {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		user, ok := currentUser(c)
+		if !ok {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
 			return
 		}
-		if !slices.Contains(roles, roleStr) {
-			zap.L().Warn("RequireRole: access denied",
-				zap.String("path", c.Request.URL.Path),
-				zap.String("role", roleStr),
-				zap.Strings("required", roles),
-			)
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "insufficient permissions"})
-			return
+		for _, permission := range permissions {
+			if !user.Permissions.Has(permission) {
+				zap.L().Warn("RequirePermission: access denied",
+					zap.String("path", c.Request.URL.Path),
+					zap.String("role", user.Role),
+					zap.String("required", permission),
+				)
+				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "insufficient permissions"})
+				return
+			}
 		}
 		c.Next()
 	}
 }
 
-// Уборки (/calendar/cleaning) доступны только ролям admin и manager (см. Gin), но намеренно
-// не ограничиваются по apartments.access: эти роли видят и редактируют уборки по любым комнатам,
+// Уборки (/calendar/cleaning) доступны ролям с правом cleaning.manage, но намеренно
+// не ограничиваются по апартаментам: такие роли видят и редактируют уборки по любым комнатам,
 // включая отсутствующие в apartments.
 
-// roomAccess возвращает закрытые для роли пользователя апартаменты (кешируется на время запроса).
+// roomAccess возвращает доступные пользователю апартаменты (кешируется на время запроса).
 // При ошибке сам пишет ответ и возвращает false.
 func (h *Handle) roomAccess(c *gin.Context) (services.RoomAccess, bool) {
 	if cached, ok := c.Get(roomAccessContextKey); ok {
 		return cached.(services.RoomAccess), true
 	}
 
-	roleStr, err := getRoleFromContext(c)
-	if err != nil {
-		c.String(http.StatusUnauthorized, err.Error())
-		return nil, false
+	user, ok := mustCurrentUser(c)
+	if !ok {
+		return services.RoomAccess{}, false
 	}
 
-	access, err := h.access.RoomAccessForRole(c.Request.Context(), roleStr)
+	access, err := h.access.RoomAccessFor(c.Request.Context(), user)
 	if err != nil {
 		zap.L().Error("roomAccess", zap.Error(err))
 		c.String(http.StatusInternalServerError, "internal error")
-		return nil, false
+		return services.RoomAccess{}, false
 	}
 
 	c.Set(roomAccessContextKey, access)

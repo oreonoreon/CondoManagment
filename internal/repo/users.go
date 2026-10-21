@@ -68,3 +68,40 @@ func (db *Repository) UpdateUser(ctx context.Context, id uuid.UUID) (*entities.U
 func (db *Repository) DeleteUser(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
+
+// ReadCurrentUser читает пользователя вместе с правами его роли. nil, если пользователя нет.
+func (db *Repository) ReadCurrentUser(ctx context.Context, id uuid.UUID) (*entities.CurrentUser, error) {
+	rows, err := db.PostgreSQL.QueryContext(ctx,
+		`SELECT u.name, u.role, rp.permission
+		FROM users u
+		LEFT JOIN role_permissions rp ON rp.role = u.role
+		WHERE u.id = $1`,
+		id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var user *entities.CurrentUser
+	for rows.Next() {
+		var name, role string
+		var permission sql.NullString
+		if err := rows.Scan(&name, &role, &permission); err != nil {
+			return nil, err
+		}
+		if user == nil {
+			user = &entities.CurrentUser{ID: id, Name: name, Role: role, Permissions: entities.NewPermissions()}
+		}
+		if permission.Valid {
+			user.Permissions[permission.String] = struct{}{}
+		}
+	}
+	return user, rows.Err()
+}
+
+// RoleExists проверяет, есть ли роль в справочнике roles.
+func (db *Repository) RoleExists(ctx context.Context, role string) (bool, error) {
+	var exists bool
+	err := db.PostgreSQL.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM roles WHERE name = $1)", role).Scan(&exists)
+	return exists, err
+}

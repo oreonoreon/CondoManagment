@@ -18,7 +18,12 @@ type StorageUsers interface {
 	GetUser(ctx context.Context, username string) (*entities.User, error)
 	UpdateUser(ctx context.Context, id uuid.UUID) (*entities.User, error)
 	DeleteUser(ctx context.Context, id uuid.UUID) error
+	ReadCurrentUser(ctx context.Context, id uuid.UUID) (*entities.CurrentUser, error)
+	RoleExists(ctx context.Context, role string) (bool, error)
 }
+
+// defaultUserRole — роль нового пользователя, если она не указана явно.
+const defaultUserRole = "manager"
 
 func NewServiceUsers(storageUsers StorageUsers) *ServiceUsers {
 	return &ServiceUsers{
@@ -31,24 +36,40 @@ func HashPassword(plain string) (string, error) {
 	return string(b), err
 }
 
-func (u *ServiceUsers) PrepareToCreateUser(username string, password string, phone string) (*entities.User, error) {
+// PrepareToCreateUser готовит пользователя к записи. Пустая роль заменяется на defaultUserRole,
+// роль должна существовать в справочнике roles.
+func (u *ServiceUsers) PrepareToCreateUser(ctx context.Context, username string, password string, phone string, role string) (*entities.User, error) {
+	if role == "" {
+		role = defaultUserRole
+	}
+	exists, err := u.storageUsers.RoleExists(ctx, role)
+	if err != nil {
+		zap.L().Error("PrepareToCreateUser: RoleExists", zap.Error(err))
+		return nil, err
+	}
+	if !exists {
+		return nil, erro.ErrUnknownRole
+	}
+
 	passwordHash, err := HashPassword(password)
 	if err != nil {
 		zap.L().Error("PrepareToCreateUser", zap.Error(err))
 		return nil, err
 	}
-	id := uuid.New()
-
-	role := "manager"
 
 	user := entities.User{
-		id,
-		username,
-		passwordHash,
-		phone,
-		role,
+		ID:           uuid.New(),
+		Name:         username,
+		PasswordHash: passwordHash,
+		Phone:        phone,
+		Role:         role,
 	}
 	return &user, nil
+}
+
+// GetCurrentUser возвращает пользователя с актуальными ролью и правами. nil, если пользователя нет.
+func (u *ServiceUsers) GetCurrentUser(ctx context.Context, id uuid.UUID) (*entities.CurrentUser, error) {
+	return u.storageUsers.ReadCurrentUser(ctx, id)
 }
 
 func (u *ServiceUsers) GetUser(ctx context.Context, username string) (*entities.User, error) {
