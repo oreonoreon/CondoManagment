@@ -5,6 +5,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+
+	"github.com/google/uuid"
 )
 
 func (db *Repository) CreateApartment(ctx context.Context, apartment entities.Apartment) error {
@@ -68,4 +70,33 @@ func (db *Repository) ReadApartmentAll(ctx context.Context, role string) ([]enti
 	}
 
 	return apartments, nil
+}
+
+// ReadApartmentsOwnedBy возвращает апартаменты, владельцем которых является пользователь.
+func (db *Repository) ReadApartmentsOwnedBy(ctx context.Context, userID uuid.UUID) ([]entities.Apartment, error) {
+	rows, err := db.PostgreSQL.QueryContext(ctx,
+		`SELECT a.id, a.room_number, a.description, a.airbnb_calendar
+		FROM apartments a
+		JOIN apartment_owners ao ON ao.room_number = a.room_number
+		WHERE ao.user_id = $1
+		ORDER BY a.room_number`,
+		userID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	apartments := make([]entities.Apartment, 0)
+	for rows.Next() {
+		var apartment entities.Apartment
+		var description, airbnbCalendar sql.NullString
+		if err := rows.Scan(&apartment.Oid, &apartment.RoomNumber, &description, &airbnbCalendar); err != nil {
+			return nil, err
+		}
+		apartment.Description = description.String
+		apartment.AirbnbCalendar = airbnbCalendar.String
+		apartments = append(apartments, apartment)
+	}
+	return apartments, rows.Err()
 }

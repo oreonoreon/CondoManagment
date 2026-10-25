@@ -5,7 +5,6 @@ import (
 	"awesomeProject/internal/entities"
 	"awesomeProject/internal/services"
 	"database/sql"
-	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -60,12 +59,7 @@ func Gin(h Handle) {
 		panic(err)
 	}
 
-	//store, err := postgres.NewStore(db, []byte("везде жопа лысого ПОПУГАЯ!"))
-	//if err != nil {
-	//	panic(err)
-	//}
-
-	notSpesialStore, err := pgstore.NewPGStoreFromPool(db, []byte("везде жопа лысого ПОПУГАЯ!"))
+	notSpesialStore, err := pgstore.NewPGStoreFromPool(db, []byte(h.cfg.SessionSecret))
 	if err != nil {
 		panic(err)
 	}
@@ -104,55 +98,65 @@ func Gin(h Handle) {
 
 	// Защищённые маршруты
 	api := router.Group("/calendar")
-	api.Use(SessionAuthMiddleware())
+	// Права проверяются по role_permissions (см. migrations/014_roles_and_permissions.sql).
+	api.Use(h.SessionAuthMiddleware())
 	{
-		api.POST("/createUser", h.CreateUser)
+		read := RequirePermission(entities.PermCalendarRead)
+		write := RequirePermission(entities.PermCalendarWrite)
+		reports := RequirePermission(entities.PermReportsRead)
+		tools := RequirePermission(entities.PermToolsUse)
+		today := RequirePermission(entities.PermTodayRead)
+
+		api.GET("/me", h.Me)
 		api.POST("/logout", h.LogoutHandler)
-		api.GET("/sync", h.SynchroniseBookings)
-		api.POST("/sync", h.SynchroniseBookings)
-		api.GET("/ExcelRes", h.ExcelBookings)
-		api.POST("/ExcelRes", h.ExcelBookings)
+		api.POST("/createUser", RequirePermission(entities.PermUsersManage), h.CreateUser)
+
+		api.GET("/sync", tools, h.SynchroniseBookings)
+		api.POST("/sync", tools, h.SynchroniseBookings)
+		api.GET("/ExcelRes", tools, h.ExcelBookings)
+		api.POST("/ExcelRes", tools, h.ExcelBookings)
+		api.POST("/BnB", tools, h.ScrapBnBPost)
+		api.POST("/BnB/locationName", tools, h.ScrapBnBLocationNameUpdate)
+		api.POST("/BnB/room", tools, h.ScrapBnbRoomUnderstandableTypePatch)
 		//api.GET("/middleprice", h.MiddlePriceForPeriod)
 		//api.POST("/middleprice", h.MiddlePriceForPeriod)
 		//api.GET("/middlepriceReport", h.MiddlePriceForPeriodReport)
 		//api.POST("/middlepriceReport", h.MiddlePriceForPeriodReport)
 
-		api.POST("/totalpriceReport", h.TotalPriceForPeriodReport)
-		api.POST("/totalpriceReportXlsx", h.TotalPriceForPeriodReportXlsx)
-		api.POST("/report", h.Report)
+		api.POST("/totalpriceReport", reports, h.TotalPriceForPeriodReport)
+		api.POST("/totalpriceReportXlsx", reports, h.TotalPriceForPeriodReportXlsx)
+		api.POST("/report", reports, h.Report)
 
 		//depricated
 		//api.POST("/r", h.BookingsPost)
 		//api.POST("/rall", h.AllBookingsPost)
 
-		api.POST("/rall", h.AllBookingsPostNEW)
-		api.GET("/r", h.ApartmentsGet)
-		api.PATCH("/updateBooking", h.UpdateBooking)
-		api.POST("/createBooking", h.CreateBookingPost)
-		api.DELETE("/deleteBooking/:id", h.DeleteBookingByID)
-		api.POST("/BnB", h.ScrapBnBPost)
-		api.POST("/BnB/locationName", h.ScrapBnBLocationNameUpdate)
-		api.POST("/BnB/room", h.ScrapBnbRoomUnderstandableTypePatch)
+		api.POST("/rall", read, h.AllBookingsPostNEW)
+		api.GET("/r", read, h.ApartmentsGet)
+		api.PATCH("/updateBooking", write, h.UpdateBooking)
+		api.POST("/createBooking", write, h.CreateBookingPost)
+		api.DELETE("/deleteBooking/:id", write, h.DeleteBookingByID)
 
-		// Bookings by date
-		api.GET("/bookings/check-in/:date", h.GetBookingsByCheckIn)
-		api.GET("/bookings/check-out/:date", h.GetBookingsByCheckOut)
+		// Bookings by date (вкладка Today)
+		api.GET("/bookings/check-in/:date", today, h.GetBookingsByCheckIn)
+		api.GET("/bookings/check-out/:date", today, h.GetBookingsByCheckOut)
 
-		// Cleaning CRUD
-		api.GET("/cleaning", h.GetAllCleaning)
-		api.GET("/cleaning/date/:date", h.GetCleaningByDate)
-		api.GET("/cleaning/:id", h.GetCleaningByID)
-		api.POST("/cleaning", h.CreateCleaning)
-		api.PATCH("/cleaning/:id", h.UpdateCleaning)
-		api.DELETE("/cleaning/:id", h.DeleteCleaning)
+		// Cleaning CRUD — без ограничения по апартаментам
+		cleaning := api.Group("/cleaning", RequirePermission(entities.PermCleaningManage))
+		cleaning.GET("", h.GetAllCleaning)
+		cleaning.GET("/date/:date", h.GetCleaningByDate)
+		cleaning.GET("/:id", h.GetCleaningByID)
+		cleaning.POST("", h.CreateCleaning)
+		cleaning.PATCH("/:id", h.UpdateCleaning)
+		cleaning.DELETE("/:id", h.DeleteCleaning)
 
 		// ReservationInfo
-		api.PATCH("/reservation-info/:id", h.UpdateReservationInfo)
+		api.PATCH("/reservation-info/:id", write, h.UpdateReservationInfo)
 
 		// Statuses
-		api.GET("/status-types", h.GetStatusTypes)
-		api.GET("/reservations/:id/statuses", h.GetReservationStatuses)
-		api.POST("/reservations/:id/statuses/:statusTypeId", h.ToggleReservationStatus)
+		api.GET("/status-types", read, h.GetStatusTypes)
+		api.GET("/reservations/:id/statuses", read, h.GetReservationStatuses)
+		api.POST("/reservations/:id/statuses/:statusTypeId", write, h.ToggleReservationStatus)
 	}
 
 	router.Run(":8080")
@@ -166,7 +170,8 @@ type Handle struct {
 	*services.ServiceApartment
 	*services.ServiceBnB
 	*services.ServiceUsers
-	cfg *config.ConfigEnv // добавляем поле конфига
+	access *services.ServiceAccess // не встраиваем, чтобы не конфликтовали имена методов
+	cfg    *config.ConfigEnv       // добавляем поле конфига
 }
 
 func NewHandle(
@@ -177,6 +182,7 @@ func NewHandle(
 	serviceApartment *services.ServiceApartment,
 	servicesBnB *services.ServiceBnB,
 	servicesUsers *services.ServiceUsers,
+	serviceAccess *services.ServiceAccess,
 	cfg *config.ConfigEnv) Handle {
 	return Handle{
 		serviceReservation,
@@ -186,6 +192,7 @@ func NewHandle(
 		serviceApartment,
 		servicesBnB,
 		servicesUsers,
+		serviceAccess,
 		cfg,
 	}
 }
@@ -199,13 +206,21 @@ func (h *Handle) UpdateBooking(c *gin.Context) {
 		c.String(http.StatusBadRequest, err.Error())
 		return
 	}
+	// проверяем и текущий апартамент брони, и тот, на который её переносят
+	if !h.requireReservation(c, request.Reservation.Oid) || !h.requireRooms(c, request.Reservation.RoomNumber) {
+		return
+	}
 	booking, err := h.TransactionalService.UpdateBooking(c.Request.Context(), *request)
 	if err != nil {
 		c.String(http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	c.IndentedJSON(http.StatusOK, booking)
+	view, ok := bookingViewFor(c, *booking)
+	if !ok {
+		return
+	}
+	c.IndentedJSON(http.StatusOK, view)
 }
 
 func (h *Handle) DeleteBookingByID(c *gin.Context) {
@@ -213,6 +228,9 @@ func (h *Handle) DeleteBookingByID(c *gin.Context) {
 	if err != nil {
 		zap.L().Error("DeleteBookingByID", zap.Error(err))
 		c.String(http.StatusBadRequest, err.Error())
+		return
+	}
+	if !h.requireReservation(c, id) {
 		return
 	}
 
@@ -233,10 +251,8 @@ func (h *Handle) CreateBookingPost(c *gin.Context) {
 		c.String(http.StatusBadRequest, err.Error())
 		return
 	}
-	if request == nil {
-		erro := errors.New("request contain error")
-		zap.L().Error("CreateBookingPost", zap.Error(erro))
-		c.String(http.StatusBadRequest, erro.Error())
+	if !h.requireRooms(c, request.Reservation.RoomNumber) {
+		return
 	}
 
 	booking, err := h.TransactionalService.CreateBooking(c.Request.Context(), *request)
@@ -245,30 +261,21 @@ func (h *Handle) CreateBookingPost(c *gin.Context) {
 		return
 	}
 
-	c.IndentedJSON(http.StatusCreated, booking)
-}
-
-func getRoleFromContext(c *gin.Context) (string, error) {
-	role, exist := c.Get("role")
-	if !exist {
-		return "", errors.New("no role found in session")
-	}
-	roleStr, ok := role.(string)
+	view, ok := bookingViewFor(c, *booking)
 	if !ok {
-		return "", errors.New("invalid role type in session")
+		return
 	}
-	return roleStr, nil
+	c.IndentedJSON(http.StatusCreated, view)
 }
 
 // ApartmentsGet request to get names of all appartment
 func (h *Handle) ApartmentsGet(c *gin.Context) {
-	roleStr, err := getRoleFromContext(c)
-	if err != nil {
-		c.String(http.StatusUnauthorized, err.Error())
+	user, ok := mustCurrentUser(c)
+	if !ok {
 		return
 	}
 
-	apartments, err := h.ServiceApartment.GetAllApartment(c.Request.Context(), roleStr)
+	apartments, err := h.ServiceApartment.GetApartmentsFor(c.Request.Context(), user)
 	if err != nil {
 		c.String(http.StatusInternalServerError, err.Error())
 		return
@@ -331,13 +338,23 @@ func (h *Handle) AllBookingsPostNEW(c *gin.Context) {
 		return
 	}
 
-	bookings, err := h.TransactionalService.GetBookingsForRooms(c.Request.Context(), request.RoomNumbers)
+	access, ok := h.roomAccess(c)
+	if !ok {
+		return
+	}
+	roomNumbers := filterByRoom(access, request.RoomNumbers, func(room string) string { return room })
+
+	bookings, err := h.TransactionalService.GetBookingsForRooms(c.Request.Context(), roomNumbers)
 	if err != nil {
 		c.String(http.StatusInternalServerError, err.Error())
 		return
 	}
+	view, ok := bookingsViewFor(c, bookings)
+	if !ok {
+		return
+	}
 	c.IndentedJSON(http.StatusOK, gin.H{
-		"bookings": bookings,
+		"bookings": view,
 	})
 }
 

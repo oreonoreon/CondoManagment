@@ -24,6 +24,9 @@ func (h *Handle) Report(c *gin.Context) {
 		c.String(http.StatusBadRequest, err.Error())
 		return
 	}
+	if !h.requireRooms(c, request.RoomNumber) {
+		return
+	}
 
 	fileData, err := h.TransactionalService.CreateReport(c.Request.Context(), request.RoomNumber, request.Start, request.End)
 	if err != nil {
@@ -86,9 +89,8 @@ func (h *Handle) Report(c *gin.Context) {
 //}
 
 func (h *Handle) TotalPriceForPeriodReport(c *gin.Context) {
-	roleStr, err := getRoleFromContext(c)
-	if err != nil {
-		c.String(http.StatusUnauthorized, err.Error())
+	user, ok := mustCurrentUser(c)
+	if !ok {
 		return
 	}
 
@@ -98,14 +100,14 @@ func (h *Handle) TotalPriceForPeriodReport(c *gin.Context) {
 	}
 
 	p := new(perioud)
-	err = c.BindJSON(p)
+	err := c.BindJSON(p)
 	if err != nil {
 		zap.L().Error("UpdateBooking", zap.Error(err))
 		c.String(http.StatusBadRequest, err.Error())
 		return
 	}
 
-	apartments, err := h.ServiceApartment.GetAllApartment(c.Request.Context(), roleStr)
+	apartments, err := h.ServiceApartment.GetApartmentsFor(c.Request.Context(), user)
 	if err != nil {
 		zap.L().Error("TotalPriceForPeriodReport", zap.Error(err))
 		c.String(http.StatusInternalServerError, err.Error())
@@ -135,13 +137,12 @@ const (
 // помесячно за период с totalPriceReportStartMonth.totalPriceReportStartYear по
 // totalPriceReportEndMonth.totalPriceReportEndYear.
 func (h *Handle) TotalPriceForPeriodReportXlsx(c *gin.Context) {
-	roleStr, err := getRoleFromContext(c)
-	if err != nil {
-		c.String(http.StatusUnauthorized, err.Error())
+	user, ok := mustCurrentUser(c)
+	if !ok {
 		return
 	}
 
-	apartments, err := h.ServiceApartment.GetAllApartment(c.Request.Context(), roleStr)
+	apartments, err := h.ServiceApartment.GetApartmentsFor(c.Request.Context(), user)
 	if err != nil {
 		zap.L().Error("TotalPriceForPeriodReportXlsx", zap.Error(err))
 		c.String(http.StatusInternalServerError, err.Error())

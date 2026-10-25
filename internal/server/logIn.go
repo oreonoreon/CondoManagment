@@ -5,6 +5,7 @@ import (
 	"errors"
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
 	"net/http"
@@ -15,13 +16,18 @@ func (h *Handle) CreateUser(c *gin.Context) {
 		Username string `json:"username"`
 		Password string `json:"password"`
 		Phone    string `json:"phone"`
+		Role     string `json:"role"` // необязательно, по умолчанию manager
 	}
 	if err := c.ShouldBindJSON(&u); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad payload"})
 		return
 	}
 
-	user, err := h.ServiceUsers.PrepareToCreateUser(u.Username, u.Password, u.Phone)
+	user, err := h.ServiceUsers.PrepareToCreateUser(c.Request.Context(), u.Username, u.Password, u.Phone, u.Role)
+	if errors.Is(err, erro.ErrUnknownRole) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -64,9 +70,9 @@ func (h *Handle) LoginHandler(c *gin.Context) {
 		return
 	}
 
+	// Роль в сессии не храним: SessionAuthMiddleware на каждый запрос читает актуальные роль и права из БД.
 	session := sessions.Default(c)
 	session.Set("userID", user.ID.String())
-	session.Set("role", user.Role)
 
 	if err := session.Save(); err != nil {
 		zap.L().Error("LoginHandler: failed to save session", zap.Error(err))
@@ -103,20 +109,52 @@ func (h *Handle) LogoutHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "logged out"})
 }
 
-func SessionAuthMiddleware() gin.HandlerFunc {
+// SessionAuthMiddleware пускает только вошедших пользователей и кладёт в контекст
+// актуальные из БД роль и права (смена роли действует сразу, удалённый пользователь теряет доступ).
+func (h *Handle) SessionAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		session := sessions.Default(c)
-		uid := session.Get("userID")
-		role := session.Get("role")
+		uid, _ := session.Get("userID").(string)
 
-		if uid == nil {
+		id, err := uuid.Parse(uid)
+		if err != nil {
 			zap.L().Warn("Unauthorized access attempt", zap.String("path", c.Request.URL.Path))
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
 			return
 		}
 
+		user, err := h.ServiceUsers.GetCurrentUser(c.Request.Context(), id)
+		if err != nil {
+			zap.L().Error("SessionAuthMiddleware: GetCurrentUser", zap.Error(err))
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			return
+		}
+		if user == nil {
+			zap.L().Warn("Session of deleted user", zap.String("userID", uid))
+			session.Clear()
+			if err := session.Save(); err != nil {
+				zap.L().Error("SessionAuthMiddleware: failed to clear session", zap.Error(err))
+			}
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+			return
+		}
+
+		c.Set(currentUserContextKey, *user)
 		c.Set("userID", uid)
-		c.Set("role", role)
 		c.Next()
 	}
+}
+
+// Me GET /calendar/me — текущий пользователь, его роль и права (фронт по ним строит интерфейс).
+func (h *Handle) Me(c *gin.Context) {
+	user, ok := mustCurrentUser(c)
+	if !ok {
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"id":          user.ID,
+		"name":        user.Name,
+		"role":        user.Role,
+		"permissions": user.Permissions.List(),
+	})
 }

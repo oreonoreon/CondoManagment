@@ -1,6 +1,7 @@
 package server
 
 import (
+	"awesomeProject/internal/entities"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -23,9 +24,22 @@ func (h *Handle) GetStatusTypes(c *gin.Context) {
 // GetReservationStatuses GET /calendar/reservations/:id/statuses
 // Возвращает текущие активные статусы указанной брони.
 func (h *Handle) GetReservationStatuses(c *gin.Context) {
+	user, ok := mustCurrentUser(c)
+	if !ok {
+		return
+	}
+	// статусы — поле брони, его видимость задаётся правом booking.field.statuses
+	if !user.Permissions.CanSeeBookingField(entities.BookingFieldStatuses) {
+		c.String(http.StatusForbidden, "insufficient permissions")
+		return
+	}
+
 	reservationID, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		c.String(http.StatusBadRequest, "invalid id: "+err.Error())
+		return
+	}
+	if !h.requireReservation(c, reservationID) {
 		return
 	}
 
@@ -49,6 +63,9 @@ func (h *Handle) ToggleReservationStatus(c *gin.Context) {
 	statusTypeID, err := strconv.Atoi(c.Param("statusTypeId"))
 	if err != nil {
 		c.String(http.StatusBadRequest, "invalid statusTypeId: "+err.Error())
+		return
+	}
+	if !h.requireReservation(c, reservationID) {
 		return
 	}
 

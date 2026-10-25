@@ -16,6 +16,9 @@ func (h *Handle) UpdateReservationInfo(c *gin.Context) {
 		c.String(http.StatusBadRequest, "invalid id: "+err.Error())
 		return
 	}
+	if !h.requireReservationInfo(c, id) {
+		return
+	}
 
 	var req entities.ReservationInfo
 	if err := c.ShouldBindJSON(&req); err != nil {

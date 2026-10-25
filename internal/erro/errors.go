@@ -40,4 +40,6 @@ var (
 	ErrEmptyResultFromReservation = &Err{1011, "Reservation was not found by id"}
 
 	ErrWrongCreds = &Err{1012, "Invalid credentials"}
+
+	ErrUnknownRole = &Err{1013, "Unknown role"}
 )

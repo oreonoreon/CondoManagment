@@ -38,6 +38,9 @@ func main() {
 		zap.Bool("IsProduction", confEnv.IsProduction),
 		zap.String("FrontURL", confEnv.FrontURL),
 	)
+	if confEnv.SessionSecretGenerated {
+		zap.L().Warn("SESSION_SECRET not set: using a random key, sessions will reset on restart")
+	}
 
 	//create Db connection
 	db, err := repo.ConnectionPostgreSQl(confEnv)
@@ -78,6 +81,7 @@ func main() {
 	serviceApartment := services.NewServiceApartment(postgre)
 	serviceBnB := services.NewServiceBnB(postgre, postgre, postgre, postgre, postgre)
 	servicesUsers := services.NewServiceUsers(postgre)
+	serviceAccess := services.NewServiceAccess(postgre)
 
 	//handlers
 	handler := server.NewHandle(
@@ -88,6 +92,7 @@ func main() {
 		serviceApartment,
 		serviceBnB,
 		servicesUsers,
+		serviceAccess,
 		confEnv,
 	)
 

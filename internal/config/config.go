@@ -3,10 +3,15 @@ package config
 import (
 	"awesomeProject/internal/entities"
 	"awesomeProject/internal/excelCalendarScraper/models"
+	"crypto/rand"
+	"encoding/hex"
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
 	"os"
 )
+
+// minSessionSecretLen — минимальная длина ключа подписи сессий в production.
+const minSessionSecretLen = 32
 
 type Config struct {
 	LogPath            string `yaml:"logPath"`
@@ -48,7 +53,10 @@ type ConfigEnv struct {
 	FrontURL     string
 	IsProduction bool
 	DatabaseDSN  string
-	//SessionSecret string
+	// SessionSecret — ключ подписи cookie сессий (env SESSION_SECRET).
+	SessionSecret string
+	// SessionSecretGenerated — SESSION_SECRET не задан и ключ сгенерирован случайно (только вне production).
+	SessionSecretGenerated bool
 	//ServerPort    string
 }
 
@@ -75,7 +83,30 @@ func LoadEnv() *ConfigEnv {
 
 	conf.DatabaseDSN = buildDataSourceName()
 
+	conf.SessionSecret, conf.SessionSecretGenerated = loadSessionSecret(conf.IsProduction)
+
 	return conf
+}
+
+// loadSessionSecret читает SESSION_SECRET. В production ключ обязателен;
+// в разработке без него генерируется случайный (сессии сбросятся после перезапуска).
+func loadSessionSecret(isProduction bool) (secret string, generated bool) {
+	secret = os.Getenv("SESSION_SECRET")
+	if isProduction {
+		if len(secret) < minSessionSecretLen {
+			panic("SESSION_SECRET must be set and be at least 32 characters long in production")
+		}
+		return secret, false
+	}
+	if secret != "" {
+		return secret, false
+	}
+
+	b := make([]byte, minSessionSecretLen)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return hex.EncodeToString(b), true
 }
 
 func getEnv(key, defaultValue string) string {
