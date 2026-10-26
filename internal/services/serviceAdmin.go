@@ -118,7 +118,11 @@ func (s *ServiceAdmin) CreateApartment(ctx context.Context, apartment entities.A
 	if apartment.RoomNumber == "" {
 		return nil, erro.NewValidation("Укажите номер апартамента")
 	}
-	id, err := s.storage.CreateApartment(ctx, apartment, normalizeAccess(access))
+	access = normalizeAccess(access)
+	if err := s.checkRoleGrants(ctx, access.Roles); err != nil {
+		return nil, err
+	}
+	id, err := s.storage.CreateApartment(ctx, apartment, access)
 	if err != nil {
 		return nil, err
 	}
@@ -134,10 +138,33 @@ func (s *ServiceAdmin) UpdateApartment(ctx context.Context, id int, ch entities.
 }
 
 func (s *ServiceAdmin) SetApartmentAccess(ctx context.Context, id int, access entities.ApartmentAccess) (*entities.ApartmentWithAccess, error) {
-	if err := s.storage.SetApartmentAccess(ctx, id, normalizeAccess(access)); err != nil {
+	access = normalizeAccess(access)
+	if err := s.checkRoleGrants(ctx, access.Roles); err != nil {
+		return nil, err
+	}
+	if err := s.storage.SetApartmentAccess(ctx, id, access); err != nil {
 		return nil, err
 	}
 	return s.storage.ReadApartmentWithAccess(ctx, id)
+}
+
+// checkRoleGrants запрещает выдавать апартамент целиком ролям с правом apartments.assigned_only:
+// их пользователи видят только выданное им лично, иначе один владелец увидел бы квартиры другого.
+func (s *ServiceAdmin) checkRoleGrants(ctx context.Context, roles []string) error {
+	if len(roles) == 0 {
+		return nil
+	}
+	all, err := s.storage.ListRoles(ctx)
+	if err != nil {
+		return err
+	}
+	for _, role := range all {
+		if slices.Contains(roles, role.Name) && slices.Contains(role.Permissions, entities.PermApartmentsAssignedOnly) {
+			return erro.NewValidation(fmt.Sprintf(
+				"Роль %s получает апартаменты только лично — отметьте нужных пользователей вместо роли", role.Name))
+		}
+	}
+	return nil
 }
 
 // normalizeAccess убирает повторы и nil-срезы.

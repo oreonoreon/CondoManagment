@@ -17,7 +17,10 @@ const (
 	PermToolsUse           = "tools.use"
 	PermApartmentsAll      = "apartments.all"
 	PermApartmentsInactive = "apartments.inactive"
-	PermApartmentsManage   = "apartments.manage"
+	// PermApartmentsAssignedOnly — роль видит только апартаменты, выданные пользователю лично;
+	// выдать такой роли апартамент целиком нельзя (например, владельцы — каждому свои).
+	PermApartmentsAssignedOnly = "apartments.assigned_only"
+	PermApartmentsManage       = "apartments.manage"
 	PermRolesManage        = "roles.manage"
 
 	// PermBookingFieldPrefix + имя поля разрешает отдавать это поле брони.
@@ -94,16 +97,18 @@ type CurrentUser struct {
 type ApartmentScope struct {
 	Role     string
 	UserID   uuid.UUID
-	All      bool // apartments.all — все апартаменты без выдачи доступа
-	Inactive bool // apartments.inactive — включая неактивные
+	All          bool // apartments.all — все апартаменты без выдачи доступа
+	Inactive     bool // apartments.inactive — включая неактивные
+	AssignedOnly bool // apartments.assigned_only — только выданные лично, выдача роли не действует
 }
 
 func (u CurrentUser) ApartmentScope() ApartmentScope {
 	return ApartmentScope{
-		Role:     u.Role,
-		UserID:   u.ID,
-		All:      u.Permissions.Has(PermApartmentsAll),
-		Inactive: u.Permissions.Has(PermApartmentsInactive),
+		Role:         u.Role,
+		UserID:       u.ID,
+		All:          u.Permissions.Has(PermApartmentsAll),
+		Inactive:     u.Permissions.Has(PermApartmentsInactive),
+		AssignedOnly: u.Permissions.Has(PermApartmentsAssignedOnly),
 	}
 }
 
@@ -125,6 +130,7 @@ func PermissionCatalog() []PermissionInfo {
 		{PermToolsUse, "Excel-синхронизация и парсер Airbnb", "Инструменты"},
 		{PermApartmentsAll, "Все апартаменты без выдачи доступа", "Апартаменты"},
 		{PermApartmentsInactive, "Видеть неактивные апартаменты", "Апартаменты"},
+		{PermApartmentsAssignedOnly, "Только апартаменты, выданные пользователю лично (роли целиком не выдаются)", "Апартаменты"},
 		{PermUsersManage, "Админка: пользователи", "Админка"},
 		{PermApartmentsManage, "Админка: апартаменты и доступ к ним", "Админка"},
 		{PermRolesManage, "Админка: роли и права", "Админка"},

@@ -151,3 +151,22 @@ func TestUpdateUserValidation(t *testing.T) {
 	require.NotNil(t, storage.updatedUser.PasswordHash)
 	assert.NotEqual(t, password, *storage.updatedUser.PasswordHash, "в БД уходит хеш, не пароль")
 }
+
+func TestRoleGrantRejectedForAssignedOnlyRole(t *testing.T) {
+	storage := &fakeAdminStorage{roles: []entities.Role{
+		{Name: "manager"},
+		{Name: "apartmentOwner", Permissions: []string{entities.PermApartmentsAssignedOnly}},
+	}}
+	s := NewServiceAdmin(storage, nil)
+	owner := uuid.New()
+
+	// выдать квартиру роли владельцев целиком нельзя — только лично
+	_, err := s.SetApartmentAccess(context.Background(), 1, entities.ApartmentAccess{Roles: []string{"manager", "apartmentOwner"}})
+	assert.True(t, isValidation(err))
+	_, err = s.CreateApartment(context.Background(), entities.Apartment{RoomNumber: "X1"}, entities.ApartmentAccess{Roles: []string{"apartmentOwner"}})
+	assert.True(t, isValidation(err))
+
+	_, err = s.SetApartmentAccess(context.Background(), 1, entities.ApartmentAccess{Roles: []string{"manager"}, UserIDs: []uuid.UUID{owner}})
+	require.NoError(t, err)
+	assert.Equal(t, []uuid.UUID{owner}, storage.lastAccess.UserIDs)
+}

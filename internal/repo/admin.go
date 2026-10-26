@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -312,6 +313,7 @@ func (db *Repository) CreateRole(ctx context.Context, name, description string) 
 }
 
 // UpdateRole меняет описание (nil — не менять) и права (nil — не менять, иначе заменяет целиком).
+// Если среди прав есть apartments.assigned_only, выдача апартаментов этой роли удаляется.
 func (db *Repository) UpdateRole(ctx context.Context, name string, description *string, permissions []string) error {
 	return db.withTx(ctx, func(tx *sql.Tx) error {
 		var exists bool
@@ -334,6 +336,12 @@ func (db *Repository) UpdateRole(ctx context.Context, name string, description *
 				"INSERT INTO role_permissions (role, permission) SELECT $1, unnest($2::varchar[]) ON CONFLICT DO NOTHING",
 				name, pq.Array(permissions)); err != nil {
 				return err
+			}
+			// выдача апартаментов роли с apartments.assigned_only не действует — убираем её, чтобы не путала
+			if slices.Contains(permissions, entities.PermApartmentsAssignedOnly) {
+				if _, err := tx.ExecContext(ctx, "DELETE FROM apartment_access WHERE role=$1", name); err != nil {
+					return err
+				}
 			}
 		}
 		return nil

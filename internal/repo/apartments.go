@@ -7,13 +7,14 @@ import (
 )
 
 // apartmentInScope — условие видимости апартамента a для ApartmentScope (аргументы — apartmentScopeArgs):
-// активный (или есть право на неактивные) и доступ выдан роли/пользователю (или право на все).
+// активный (или есть право на неактивные) и доступ выдан пользователю лично или его роли
+// (выдача роли не учитывается при apartments.assigned_only), либо есть право на все.
 const apartmentInScope = `($3 OR a.is_active) AND ($2 OR EXISTS (
 	SELECT 1 FROM apartment_access aa
-	WHERE aa.room_number = a.room_number AND (aa.role = $1 OR aa.user_id = $4)))`
+	WHERE aa.room_number = a.room_number AND ((aa.role = $1 AND NOT $5) OR aa.user_id = $4)))`
 
 func apartmentScopeArgs(scope entities.ApartmentScope) []any {
-	return []any{scope.Role, scope.All, scope.Inactive, scope.UserID}
+	return []any{scope.Role, scope.All, scope.Inactive, scope.UserID, scope.AssignedOnly}
 }
 
 const apartmentColumns = `a.id, a.room_number, a.description, a.airbnb_calendar, a.is_active`

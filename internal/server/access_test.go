@@ -33,7 +33,7 @@ type fakeAccessStorage struct {
 func (f fakeAccessStorage) ReadAllowedRooms(_ context.Context, scope entities.ApartmentScope) ([]string, error) {
 	var rooms []string
 	for _, a := range f.apartments {
-		granted := slices.Contains(a.roles, scope.Role) || slices.Contains(a.users, scope.UserID)
+		granted := (slices.Contains(a.roles, scope.Role) && !scope.AssignedOnly) || slices.Contains(a.users, scope.UserID)
 		if (scope.Inactive || a.active) && (scope.All || granted) {
 			rooms = append(rooms, a.room)
 		}
@@ -54,7 +54,8 @@ var testUsers = map[string]entities.CurrentUser{
 	"admin": {Role: "admin", Permissions: entities.NewPermissions(entities.PermCalendarRead, entities.PermUsersManage,
 		entities.PermApartmentsAll, entities.PermApartmentsInactive)},
 	"manager": {Role: "manager", Permissions: entities.NewPermissions(entities.PermCalendarRead)},
-	"owner":   {ID: ownerID, Role: "apartmentOwner", Permissions: entities.NewPermissions(entities.PermCalendarRead)},
+	"owner": {ID: ownerID, Role: "apartmentOwner",
+		Permissions: entities.NewPermissions(entities.PermCalendarRead, entities.PermApartmentsAssignedOnly)},
 }
 
 // newTestRouter — роутер с пользователем user (пустая строка — без входа).
@@ -65,6 +66,8 @@ func newTestRouter(user string) *gin.Engine {
 			{room: "INACT1", active: false, roles: []string{"manager"}},
 			{room: "OPEN1", active: true, roles: []string{"manager"}},
 			{room: "OWN1", active: true, users: []uuid.UUID{ownerID}},
+			// выдан роли apartmentOwner целиком — владельцу с assigned_only не виден
+			{room: "ROLEOWN1", active: true, roles: []string{"apartmentOwner"}},
 		},
 		rooms: map[int]string{1: "INACT1", 2: "OPEN1", 3: "OWN1"},
 	})}
@@ -92,7 +95,7 @@ func newTestRouter(user string) *gin.Engine {
 	r.GET("/filter", func(c *gin.Context) {
 		access, ok := h.roomAccess(c)
 		if ok {
-			c.JSON(http.StatusOK, filterByRoom(access, []string{"INACT1", "OPEN1", "OWN1", "UNKNOWN"}, func(s string) string { return s }))
+			c.JSON(http.StatusOK, filterByRoom(access, []string{"INACT1", "OPEN1", "OWN1", "ROLEOWN1", "UNKNOWN"}, func(s string) string { return s }))
 		}
 	})
 	return r
@@ -135,6 +138,7 @@ func TestRequireRooms(t *testing.T) {
 	owner := newTestRouter("owner")
 	assert.Equal(t, http.StatusOK, do(owner, http.MethodGet, "/room/OWN1").Code)
 	assert.Equal(t, http.StatusForbidden, do(owner, http.MethodGet, "/room/OPEN1").Code)
+	assert.Equal(t, http.StatusForbidden, do(owner, http.MethodGet, "/room/ROLEOWN1").Code, "выдача роли не действует при assigned_only")
 }
 
 func TestRequireReservation(t *testing.T) {
@@ -151,6 +155,6 @@ func TestRequireReservation(t *testing.T) {
 
 func TestFilterByRoom(t *testing.T) {
 	assert.JSONEq(t, `["OPEN1"]`, do(newTestRouter("manager"), http.MethodGet, "/filter").Body.String())
-	assert.JSONEq(t, `["INACT1","OPEN1","OWN1"]`, do(newTestRouter("admin"), http.MethodGet, "/filter").Body.String())
+	assert.JSONEq(t, `["INACT1","OPEN1","OWN1","ROLEOWN1"]`, do(newTestRouter("admin"), http.MethodGet, "/filter").Body.String())
 	assert.JSONEq(t, `["OWN1"]`, do(newTestRouter("owner"), http.MethodGet, "/filter").Body.String())
 }
