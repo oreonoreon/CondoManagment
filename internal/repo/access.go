@@ -1,19 +1,17 @@
 package repo
 
 import (
+	"awesomeProject/internal/entities"
 	"context"
 	"database/sql"
 	"errors"
-
-	"github.com/google/uuid"
 )
 
-// ReadForbiddenRooms возвращает номера апартаментов, к которым у роли нет доступа
-// (роль отсутствует в apartments.access).
-func (db *Repository) ReadForbiddenRooms(ctx context.Context, role string) ([]string, error) {
+// ReadAllowedRooms возвращает номера апартаментов, видимых пользователю.
+func (db *Repository) ReadAllowedRooms(ctx context.Context, scope entities.ApartmentScope) ([]string, error) {
 	rows, err := db.PostgreSQL.QueryContext(ctx,
-		"SELECT room_number FROM apartments WHERE NOT ($1 = ANY(COALESCE(access, '{}')))",
-		role,
+		`SELECT a.room_number FROM apartments a WHERE a.room_number IS NOT NULL AND `+apartmentInScope,
+		apartmentScopeArgs(scope)...,
 	)
 	if err != nil {
 		return nil, err
@@ -22,13 +20,11 @@ func (db *Repository) ReadForbiddenRooms(ctx context.Context, role string) ([]st
 
 	rooms := make([]string, 0)
 	for rows.Next() {
-		var room sql.NullString
+		var room string
 		if err := rows.Scan(&room); err != nil {
 			return nil, err
 		}
-		if room.Valid {
-			rooms = append(rooms, room.String)
-		}
+		rooms = append(rooms, room)
 	}
 	return rooms, rows.Err()
 }
@@ -55,26 +51,4 @@ func (db *Repository) readRoom(ctx context.Context, query string, id int) (strin
 		return "", false, err
 	}
 	return room, true, nil
-}
-
-// ReadOwnedRooms возвращает номера апартаментов, владельцем которых является пользователь.
-func (db *Repository) ReadOwnedRooms(ctx context.Context, userID uuid.UUID) ([]string, error) {
-	rows, err := db.PostgreSQL.QueryContext(ctx,
-		"SELECT room_number FROM apartment_owners WHERE user_id = $1",
-		userID,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	rooms := make([]string, 0)
-	for rows.Next() {
-		var room string
-		if err := rows.Scan(&room); err != nil {
-			return nil, err
-		}
-		rooms = append(rooms, room)
-	}
-	return rooms, rows.Err()
 }

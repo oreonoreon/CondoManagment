@@ -157,6 +157,30 @@ func Gin(h Handle) {
 		api.GET("/status-types", read, h.GetStatusTypes)
 		api.GET("/reservations/:id/statuses", read, h.GetReservationStatuses)
 		api.POST("/reservations/:id/statuses/:statusTypeId", write, h.ToggleReservationStatus)
+
+		// Админка
+		admin := api.Group("/admin")
+		usersManage := RequirePermission(entities.PermUsersManage)
+		apartmentsManage := RequirePermission(entities.PermApartmentsManage)
+		rolesManage := RequirePermission(entities.PermRolesManage)
+
+		// список пользователей нужен и для выдачи доступа к апартаментам
+		admin.GET("/users", RequireAnyPermission(entities.PermUsersManage, entities.PermApartmentsManage), h.AdminListUsers)
+		admin.POST("/users", usersManage, h.AdminCreateUser)
+		admin.PATCH("/users/:id", usersManage, h.AdminUpdateUser)
+		admin.DELETE("/users/:id", usersManage, h.AdminDeleteUser)
+
+		admin.GET("/apartments", apartmentsManage, h.AdminListApartments)
+		admin.POST("/apartments", apartmentsManage, h.AdminCreateApartment)
+		admin.PATCH("/apartments/:id", apartmentsManage, h.AdminUpdateApartment)
+		admin.PUT("/apartments/:id/access", apartmentsManage, h.AdminSetApartmentAccess)
+
+		// список ролей нужен и для выбора роли пользователю, и для выдачи доступа к апартаментам
+		admin.GET("/roles", RequireAnyPermission(entities.PermUsersManage, entities.PermApartmentsManage, entities.PermRolesManage), h.AdminListRoles)
+		admin.GET("/permissions", rolesManage, h.AdminPermissionCatalog)
+		admin.POST("/roles", rolesManage, h.AdminCreateRole)
+		admin.PATCH("/roles/:name", rolesManage, h.AdminUpdateRole)
+		admin.DELETE("/roles/:name", rolesManage, h.AdminDeleteRole)
 	}
 
 	router.Run(":8080")
@@ -171,7 +195,8 @@ type Handle struct {
 	*services.ServiceBnB
 	*services.ServiceUsers
 	access *services.ServiceAccess // не встраиваем, чтобы не конфликтовали имена методов
-	cfg    *config.ConfigEnv       // добавляем поле конфига
+	admin  *services.ServiceAdmin
+	cfg    *config.ConfigEnv // добавляем поле конфига
 }
 
 func NewHandle(
@@ -183,6 +208,7 @@ func NewHandle(
 	servicesBnB *services.ServiceBnB,
 	servicesUsers *services.ServiceUsers,
 	serviceAccess *services.ServiceAccess,
+	serviceAdmin *services.ServiceAdmin,
 	cfg *config.ConfigEnv) Handle {
 	return Handle{
 		serviceReservation,
@@ -193,6 +219,7 @@ func NewHandle(
 		servicesBnB,
 		servicesUsers,
 		serviceAccess,
+		serviceAdmin,
 		cfg,
 	}
 }

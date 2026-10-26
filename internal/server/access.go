@@ -57,6 +57,29 @@ func RequirePermission(permissions ...string) gin.HandlerFunc {
 	}
 }
 
+// RequireAnyPermission пропускает запрос, если у роли пользователя есть хотя бы одно из указанных прав.
+func RequireAnyPermission(permissions ...string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		user, ok := currentUser(c)
+		if !ok {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+			return
+		}
+		for _, permission := range permissions {
+			if user.Permissions.Has(permission) {
+				c.Next()
+				return
+			}
+		}
+		zap.L().Warn("RequireAnyPermission: access denied",
+			zap.String("path", c.Request.URL.Path),
+			zap.String("role", user.Role),
+			zap.Strings("required_any", permissions),
+		)
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "insufficient permissions"})
+	}
+}
+
 // Уборки (/calendar/cleaning) доступны ролям с правом cleaning.manage, но намеренно
 // не ограничиваются по апартаментам: такие роли видят и редактируют уборки по любым комнатам,
 // включая отсутствующие в apartments.

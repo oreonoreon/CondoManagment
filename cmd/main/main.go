@@ -82,6 +82,7 @@ func main() {
 	serviceBnB := services.NewServiceBnB(postgre, postgre, postgre, postgre, postgre)
 	servicesUsers := services.NewServiceUsers(postgre)
 	serviceAccess := services.NewServiceAccess(postgre)
+	serviceAdmin := services.NewServiceAdmin(postgre, servicesUsers)
 
 	//handlers
 	handler := server.NewHandle(
@@ -93,6 +94,7 @@ func main() {
 		serviceBnB,
 		servicesUsers,
 		serviceAccess,
+		serviceAdmin,
 		confEnv,
 	)
 

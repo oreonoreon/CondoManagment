@@ -3,8 +3,6 @@ package services
 import (
 	"awesomeProject/internal/entities"
 	"context"
-
-	"github.com/google/uuid"
 )
 
 type ServiceApartment struct {
@@ -12,8 +10,7 @@ type ServiceApartment struct {
 }
 
 type StorageApartment interface {
-	ReadApartmentAll(ctx context.Context, role string) ([]entities.Apartment, error)
-	ReadApartmentsOwnedBy(ctx context.Context, userID uuid.UUID) ([]entities.Apartment, error)
+	ReadApartmentsFor(ctx context.Context, scope entities.ApartmentScope) ([]entities.Apartment, error)
 }
 
 func NewServiceApartment(storageApartment StorageApartment) *ServiceApartment {
@@ -22,19 +19,8 @@ func NewServiceApartment(storageApartment StorageApartment) *ServiceApartment {
 	}
 }
 
-func (s *ServiceApartment) GetAllApartment(ctx context.Context, role string) ([]entities.Apartment, error) {
-	apartment, err := s.storageApartment.ReadApartmentAll(ctx, role)
-	if err != nil {
-		return nil, err
-	}
-	return apartment, nil
-}
-
-// GetApartmentsFor возвращает апартаменты, доступные пользователю: свои (apartments.owned_only)
-// или по роли через apartments.access.
+// GetApartmentsFor возвращает апартаменты, видимые пользователю: выданные его роли или лично ему
+// (все — при праве apartments.all), неактивные — только при праве apartments.inactive.
 func (s *ServiceApartment) GetApartmentsFor(ctx context.Context, user entities.CurrentUser) ([]entities.Apartment, error) {
-	if user.Permissions.Has(entities.PermApartmentsOwnedOnly) {
-		return s.storageApartment.ReadApartmentsOwnedBy(ctx, user.ID)
-	}
-	return s.GetAllApartment(ctx, user.Role)
+	return s.storageApartment.ReadApartmentsFor(ctx, user.ApartmentScope())
 }

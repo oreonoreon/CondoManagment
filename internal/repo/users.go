@@ -38,7 +38,7 @@ func (db *Repository) CreateUser(ctx context.Context, user entities.User) (*enti
 		&u.Role,
 	)
 	if err != nil {
-		return nil, err
+		return nil, translateAdminPQ(err)
 	}
 
 	return u, nil
@@ -59,14 +59,6 @@ func (db *Repository) GetUser(ctx context.Context, username string) (*entities.U
 	}
 
 	return user, nil
-}
-
-func (db *Repository) UpdateUser(ctx context.Context, id uuid.UUID) (*entities.User, error) {
-	return nil, nil
-}
-
-func (db *Repository) DeleteUser(ctx context.Context, id uuid.UUID) error {
-	return nil
 }
 
 // ReadCurrentUser читает пользователя вместе с правами его роли. nil, если пользователя нет.
