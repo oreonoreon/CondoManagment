@@ -4,6 +4,9 @@ import (
 	"awesomeProject/internal/entities"
 	"awesomeProject/internal/erro"
 	"context"
+	"strings"
+	"unicode/utf8"
+
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
@@ -16,8 +19,6 @@ type ServiceUsers struct {
 type StorageUsers interface {
 	CreateUser(ctx context.Context, user entities.User) (*entities.User, error)
 	GetUser(ctx context.Context, username string) (*entities.User, error)
-	UpdateUser(ctx context.Context, id uuid.UUID) (*entities.User, error)
-	DeleteUser(ctx context.Context, id uuid.UUID) error
 	ReadCurrentUser(ctx context.Context, id uuid.UUID) (*entities.CurrentUser, error)
 	RoleExists(ctx context.Context, role string) (bool, error)
 }
@@ -39,6 +40,16 @@ func HashPassword(plain string) (string, error) {
 // PrepareToCreateUser готовит пользователя к записи. Пустая роль заменяется на defaultUserRole,
 // роль должна существовать в справочнике roles.
 func (u *ServiceUsers) PrepareToCreateUser(ctx context.Context, username string, password string, phone string, role string) (*entities.User, error) {
+	username, phone = strings.TrimSpace(username), strings.TrimSpace(phone)
+	if err := ValidateUserName(username); err != nil {
+		return nil, err
+	}
+	if err := ValidatePhone(phone); err != nil {
+		return nil, err
+	}
+	if err := ValidatePassword(password); err != nil {
+		return nil, err
+	}
 	if role == "" {
 		role = defaultUserRole
 	}
@@ -89,4 +100,29 @@ func (u *ServiceUsers) CreateUser(ctx context.Context, user entities.User) (*ent
 		return nil, err
 	}
 	return createdUser, nil
+}
+
+// minPasswordLen — минимальная длина пароля нового или сменённого пароля.
+const minPasswordLen = 6
+
+func ValidateUserName(name string) error {
+	if name == "" {
+		return erro.NewValidation("Укажите имя пользователя")
+	}
+	return nil
+}
+
+// ValidatePhone — телефон обязателен: в users.phone стоит UNIQUE, пустой может быть только у одного.
+func ValidatePhone(phone string) error {
+	if phone == "" {
+		return erro.NewValidation("Укажите телефон")
+	}
+	return nil
+}
+
+func ValidatePassword(password string) error {
+	if utf8.RuneCountInString(password) < minPasswordLen {
+		return erro.NewValidation("Пароль должен быть не короче 6 символов")
+	}
+	return nil
 }

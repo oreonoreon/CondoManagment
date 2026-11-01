@@ -42,4 +42,17 @@ var (
 	ErrWrongCreds = &Err{1012, "Invalid credentials"}
 
 	ErrUnknownRole = &Err{1013, "Unknown role"}
+
+	// Ошибки админки (тексты показываются в интерфейсе)
+	ErrNotFound         = &Err{1014, "Не найдено"}
+	ErrAlreadyExists    = &Err{1015, "Такая запись уже существует (имя, телефон или номер апартамента заняты)"}
+	ErrInvalidReference = &Err{1016, "Указанная роль или пользователь не существует"}
 )
+
+// CodeValidation — код ошибок проверки входных данных (NewValidation).
+const CodeValidation ErrCode = 1017
+
+// NewValidation — ошибка проверки входных данных с текстом для пользователя.
+func NewValidation(desc string) *Err {
+	return &Err{CodeValidation, desc}
+}

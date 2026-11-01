@@ -11,6 +11,7 @@ import (
 	"net/http"
 )
 
+// CreateUser POST /calendar/createUser — старая ручка создания пользователя (новая — POST /calendar/admin/users).
 func (h *Handle) CreateUser(c *gin.Context) {
 	var u struct {
 		Username string `json:"username"`
@@ -23,19 +24,9 @@ func (h *Handle) CreateUser(c *gin.Context) {
 		return
 	}
 
-	user, err := h.ServiceUsers.PrepareToCreateUser(c.Request.Context(), u.Username, u.Password, u.Phone, u.Role)
-	if errors.Is(err, erro.ErrUnknownRole) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
+	createdUser, err := h.admin.CreateUser(c.Request.Context(), u.Username, u.Password, u.Phone, u.Role)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	createdUser, err := h.ServiceUsers.CreateUser(c.Request.Context(), *user)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		adminError(c, err)
 		return
 	}
 
