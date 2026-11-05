@@ -178,6 +178,7 @@ func Gin(h Handle) {
 
 		admin.GET("/condos", apartmentsManage, h.AdminListCondos)
 		admin.POST("/condos", apartmentsManage, h.AdminCreateCondo)
+		admin.PUT("/condos/order", apartmentsManage, h.AdminSetCondoOrder)
 		admin.PATCH("/condos/:id", apartmentsManage, h.AdminRenameCondo)
 		admin.DELETE("/condos/:id", apartmentsManage, h.AdminDeleteCondo)
 		admin.POST("/condos/:id/groups", apartmentsManage, h.AdminCreateGroup)

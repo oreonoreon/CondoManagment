@@ -41,10 +41,12 @@ func scanApartment(row rowScanner) (entities.Apartment, error) {
 	return apartment, err
 }
 
-// ReadApartmentsFor возвращает апартаменты, видимые пользователю.
+// ReadApartmentsFor возвращает апартаменты, видимые пользователю: по кондо в заданном
+// в админке порядке (без кондо — в конце), внутри кондо — по номеру.
 func (db *Repository) ReadApartmentsFor(ctx context.Context, scope entities.ApartmentScope) ([]entities.Apartment, error) {
 	rows, err := db.PostgreSQL.QueryContext(ctx,
-		`SELECT `+apartmentColumns+` FROM `+apartmentsFrom+` WHERE `+apartmentInScope+` ORDER BY a.room_number`,
+		`SELECT `+apartmentColumns+` FROM `+apartmentsFrom+` WHERE `+apartmentInScope+`
+		ORDER BY c.sort_order, c.name, a.room_number`,
 		apartmentScopeArgs(scope)...,
 	)
 	if err != nil {

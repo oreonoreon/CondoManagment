@@ -35,6 +35,7 @@ type StorageAdmin interface {
 	CreateCondo(ctx context.Context, name string) error
 	RenameCondo(ctx context.Context, id int, name string) error
 	DeleteCondo(ctx context.Context, id int) error
+	SetCondoOrder(ctx context.Context, ids []int) error
 	CreateGroup(ctx context.Context, condoID int, name string) error
 	RenameGroup(ctx context.Context, id int, name string) error
 	DeleteGroup(ctx context.Context, id int) error
@@ -241,6 +242,25 @@ func (s *ServiceAdmin) RenameCondo(ctx context.Context, id int, name string) err
 		return err
 	}
 	return duplicateName(s.storage.RenameCondo(ctx, id, name), "Кондо с таким названием уже есть")
+}
+
+// SetCondoOrder задаёт порядок кондо в календаре: ids — все кондо, первым — верхнее.
+func (s *ServiceAdmin) SetCondoOrder(ctx context.Context, ids []int) error {
+	if len(ids) == 0 {
+		return erro.NewValidation("Не передан порядок кондо")
+	}
+	seen := make(map[int]bool, len(ids))
+	for _, id := range ids {
+		if seen[id] {
+			return erro.NewValidation("Кондо в порядке повторяется")
+		}
+		seen[id] = true
+	}
+	err := s.storage.SetCondoOrder(ctx, ids)
+	if errors.Is(err, erro.ErrInvalidReference) {
+		return erro.NewValidation("Список кондо изменился — обновите страницу")
+	}
+	return err
 }
 
 func (s *ServiceAdmin) DeleteCondo(ctx context.Context, id int) error {

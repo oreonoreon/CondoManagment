@@ -280,6 +280,23 @@ func (h *Handle) AdminRenameCondo(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+type condoOrderRequest struct {
+	CondoIDs []int `json:"condo_ids"`
+}
+
+// AdminSetCondoOrder PUT /calendar/admin/condos/order — {condo_ids}: все кондо в порядке показа в календаре.
+func (h *Handle) AdminSetCondoOrder(c *gin.Context) {
+	var req condoOrderRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	if err := h.admin.SetCondoOrder(c.Request.Context(), req.CondoIDs); err != nil {
+		adminError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
 // AdminDeleteCondo DELETE /calendar/admin/condos/:id
 func (h *Handle) AdminDeleteCondo(c *gin.Context) {
 	id, ok := intParam(c, "id")

@@ -293,11 +293,11 @@ func insertApartmentAccess(ctx context.Context, tx *sql.Tx, room string, access 
 
 // ─── Кондо и группы ───
 
-// ListCondos возвращает кондо с группами и числом апартаментов, по алфавиту.
+// ListCondos возвращает кондо в заданном порядке, с группами (по алфавиту) и числом апартаментов.
 func (db *Repository) ListCondos(ctx context.Context) ([]entities.Condo, error) {
 	rows, err := db.PostgreSQL.QueryContext(ctx,
 		`SELECT c.id, c.name, (SELECT count(*) FROM apartments a WHERE a.condo_id = c.id)
-		FROM condos c ORDER BY c.name`)
+		FROM condos c ORDER BY c.sort_order, c.name`)
 	if err != nil {
 		return nil, err
 	}
@@ -337,9 +337,37 @@ func (db *Repository) ListCondos(ctx context.Context) ([]entities.Condo, error) 
 	return condos, groups.Err()
 }
 
+// CreateCondo создаёт кондо последним по порядку.
 func (db *Repository) CreateCondo(ctx context.Context, name string) error {
-	_, err := db.PostgreSQL.ExecContext(ctx, "INSERT INTO condos (name) VALUES ($1)", name)
+	_, err := db.PostgreSQL.ExecContext(ctx,
+		"INSERT INTO condos (name, sort_order) VALUES ($1, (SELECT COALESCE(max(sort_order), 0) + 1 FROM condos))", name)
 	return translateAdminPQ(err)
+}
+
+// SetCondoOrder задаёт порядок кондо: ids — все кондо в нужном порядке.
+// erro.ErrInvalidReference, если список не совпадает с кондо в базе (кто-то добавил или удалил кондо).
+func (db *Repository) SetCondoOrder(ctx context.Context, ids []int) error {
+	return db.withTx(ctx, func(tx *sql.Tx) error {
+		var total int
+		if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM condos").Scan(&total); err != nil {
+			return err
+		}
+		res, err := tx.ExecContext(ctx,
+			`UPDATE condos c SET sort_order = o.pos
+			FROM unnest($1::int[]) WITH ORDINALITY AS o(id, pos)
+			WHERE c.id = o.id`, pq.Array(ids))
+		if err != nil {
+			return err
+		}
+		updated, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if int(updated) != total || len(ids) != total {
+			return erro.ErrInvalidReference
+		}
+		return nil
+	})
 }
 
 func (db *Repository) RenameCondo(ctx context.Context, id int, name string) error {

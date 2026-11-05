@@ -24,6 +24,7 @@ type fakeAdminStorage struct {
 
 	lastPlacement *entities.ApartmentPlacement
 	savedName     string
+	condoOrder    []int
 	storageErr    error // что вернут методы кондо и групп
 }
 
@@ -62,8 +63,12 @@ func (f *fakeAdminStorage) CreateCondo(_ context.Context, name string) error {
 	f.savedName = name
 	return f.storageErr
 }
-func (f *fakeAdminStorage) RenameCondo(context.Context, int, string) error     { return f.storageErr }
-func (f *fakeAdminStorage) DeleteCondo(context.Context, int) error             { return f.storageErr }
+func (f *fakeAdminStorage) RenameCondo(context.Context, int, string) error { return f.storageErr }
+func (f *fakeAdminStorage) DeleteCondo(context.Context, int) error         { return f.storageErr }
+func (f *fakeAdminStorage) SetCondoOrder(_ context.Context, ids []int) error {
+	f.condoOrder = ids
+	return f.storageErr
+}
 func (f *fakeAdminStorage) CreateGroup(context.Context, int, string) error     { return f.storageErr }
 func (f *fakeAdminStorage) RenameGroup(context.Context, int, string) error     { return f.storageErr }
 func (f *fakeAdminStorage) DeleteGroup(context.Context, int) error             { return f.storageErr }
@@ -244,4 +249,20 @@ func TestDeleteCondoAndGroupWithApartments(t *testing.T) {
 	storage.storageErr = nil
 	require.NoError(t, s.DeleteCondo(ctx, 1))
 	require.NoError(t, s.DeleteGroup(ctx, 1))
+}
+
+func TestCondoOrderValidated(t *testing.T) {
+	ctx := context.Background()
+	storage := &fakeAdminStorage{}
+	s := NewServiceAdmin(storage, nil)
+
+	assert.True(t, isValidation(s.SetCondoOrder(ctx, nil)), "пустой порядок")
+	assert.True(t, isValidation(s.SetCondoOrder(ctx, []int{1, 2, 1})), "повтор кондо")
+	assert.Nil(t, storage.condoOrder)
+
+	require.NoError(t, s.SetCondoOrder(ctx, []int{3, 1, 2}))
+	assert.Equal(t, []int{3, 1, 2}, storage.condoOrder)
+
+	storage.storageErr = erro.ErrInvalidReference
+	assert.True(t, isValidation(s.SetCondoOrder(ctx, []int{3, 1})), "список кондо устарел")
 }
