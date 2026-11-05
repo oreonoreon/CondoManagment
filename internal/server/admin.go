@@ -158,6 +158,8 @@ type createApartmentRequest struct {
 	IsActive       *bool       `json:"is_active"` // по умолчанию true
 	Roles          []string    `json:"roles"`
 	UserIDs        []uuid.UUID `json:"user_ids"`
+	CondoID        *int        `json:"condo_id"`
+	GroupID        *int        `json:"group_id"`
 }
 
 // AdminCreateApartment POST /calendar/admin/apartments
@@ -171,6 +173,8 @@ func (h *Handle) AdminCreateApartment(c *gin.Context) {
 		Description:    req.Description,
 		AirbnbCalendar: req.AirbnbCalendar,
 		IsActive:       req.IsActive == nil || *req.IsActive,
+		CondoID:        req.CondoID,
+		GroupID:        req.GroupID,
 	}
 	created, err := h.admin.CreateApartment(c.Request.Context(), apartment,
 		entities.ApartmentAccess{Roles: req.Roles, UserIDs: req.UserIDs})
@@ -215,6 +219,125 @@ func (h *Handle) AdminSetApartmentAccess(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, apartment)
+}
+
+// AdminSetApartmentPlacement PUT /calendar/admin/apartments/placement — {apartment_ids, condo_id, group_id}; null снимает.
+func (h *Handle) AdminSetApartmentPlacement(c *gin.Context) {
+	var req entities.ApartmentPlacement
+	if !bindJSON(c, &req) {
+		return
+	}
+	if err := h.admin.SetApartmentPlacement(c.Request.Context(), req); err != nil {
+		adminError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+// ─── Кондо и группы ───
+
+type placementNameRequest struct {
+	Name string `json:"name"`
+}
+
+// AdminListCondos GET /calendar/admin/condos — кондо с группами.
+func (h *Handle) AdminListCondos(c *gin.Context) {
+	condos, err := h.admin.ListCondos(c.Request.Context())
+	if err != nil {
+		adminError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, condos)
+}
+
+// AdminCreateCondo POST /calendar/admin/condos
+func (h *Handle) AdminCreateCondo(c *gin.Context) {
+	var req placementNameRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	if err := h.admin.CreateCondo(c.Request.Context(), req.Name); err != nil {
+		adminError(c, err)
+		return
+	}
+	c.Status(http.StatusCreated)
+}
+
+// AdminRenameCondo PATCH /calendar/admin/condos/:id
+func (h *Handle) AdminRenameCondo(c *gin.Context) {
+	id, ok := intParam(c, "id")
+	if !ok {
+		return
+	}
+	var req placementNameRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	if err := h.admin.RenameCondo(c.Request.Context(), id, req.Name); err != nil {
+		adminError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+// AdminDeleteCondo DELETE /calendar/admin/condos/:id
+func (h *Handle) AdminDeleteCondo(c *gin.Context) {
+	id, ok := intParam(c, "id")
+	if !ok {
+		return
+	}
+	if err := h.admin.DeleteCondo(c.Request.Context(), id); err != nil {
+		adminError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+// AdminCreateGroup POST /calendar/admin/condos/:id/groups
+func (h *Handle) AdminCreateGroup(c *gin.Context) {
+	condoID, ok := intParam(c, "id")
+	if !ok {
+		return
+	}
+	var req placementNameRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	if err := h.admin.CreateGroup(c.Request.Context(), condoID, req.Name); err != nil {
+		adminError(c, err)
+		return
+	}
+	c.Status(http.StatusCreated)
+}
+
+// AdminRenameGroup PATCH /calendar/admin/groups/:id
+func (h *Handle) AdminRenameGroup(c *gin.Context) {
+	id, ok := intParam(c, "id")
+	if !ok {
+		return
+	}
+	var req placementNameRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	if err := h.admin.RenameGroup(c.Request.Context(), id, req.Name); err != nil {
+		adminError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+// AdminDeleteGroup DELETE /calendar/admin/groups/:id
+func (h *Handle) AdminDeleteGroup(c *gin.Context) {
+	id, ok := intParam(c, "id")
+	if !ok {
+		return
+	}
+	if err := h.admin.DeleteGroup(c.Request.Context(), id); err != nil {
+		adminError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 // ─── Роли ───

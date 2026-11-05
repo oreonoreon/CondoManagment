@@ -17,7 +17,12 @@ func apartmentScopeArgs(scope entities.ApartmentScope) []any {
 	return []any{scope.Role, scope.All, scope.Inactive, scope.UserID, scope.AssignedOnly}
 }
 
-const apartmentColumns = `a.id, a.room_number, a.description, a.airbnb_calendar, a.is_active`
+const apartmentColumns = `a.id, a.room_number, a.description, a.airbnb_calendar, a.is_active, a.condo_id, c.name, a.group_id, g.name`
+
+// apartmentsFrom — таблица апартаментов a с названиями кондо и группы (для apartmentColumns).
+const apartmentsFrom = `apartments a
+	LEFT JOIN condos c ON c.id = a.condo_id
+	LEFT JOIN apartment_groups g ON g.id = a.group_id`
 
 type rowScanner interface {
 	Scan(dest ...any) error
@@ -25,18 +30,21 @@ type rowScanner interface {
 
 func scanApartment(row rowScanner) (entities.Apartment, error) {
 	var apartment entities.Apartment
-	var roomNumber, description, airbnbCalendar sql.NullString
-	err := row.Scan(&apartment.Oid, &roomNumber, &description, &airbnbCalendar, &apartment.IsActive)
+	var roomNumber, description, airbnbCalendar, condoName, groupName sql.NullString
+	err := row.Scan(&apartment.Oid, &roomNumber, &description, &airbnbCalendar, &apartment.IsActive,
+		&apartment.CondoID, &condoName, &apartment.GroupID, &groupName)
 	apartment.RoomNumber = roomNumber.String
 	apartment.Description = description.String
 	apartment.AirbnbCalendar = airbnbCalendar.String
+	apartment.CondoName = condoName.String
+	apartment.GroupName = groupName.String
 	return apartment, err
 }
 
 // ReadApartmentsFor возвращает апартаменты, видимые пользователю.
 func (db *Repository) ReadApartmentsFor(ctx context.Context, scope entities.ApartmentScope) ([]entities.Apartment, error) {
 	rows, err := db.PostgreSQL.QueryContext(ctx,
-		`SELECT `+apartmentColumns+` FROM apartments a WHERE `+apartmentInScope+` ORDER BY a.room_number`,
+		`SELECT `+apartmentColumns+` FROM `+apartmentsFrom+` WHERE `+apartmentInScope+` ORDER BY a.room_number`,
 		apartmentScopeArgs(scope)...,
 	)
 	if err != nil {

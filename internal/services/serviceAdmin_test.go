@@ -5,6 +5,7 @@ import (
 	"awesomeProject/internal/erro"
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -20,6 +21,10 @@ type fakeAdminStorage struct {
 	deletedUser uuid.UUID
 	updatedUser *entities.UserUpdate
 	lastAccess  *entities.ApartmentAccess
+
+	lastPlacement *entities.ApartmentPlacement
+	savedName     string
+	storageErr    error // что вернут методы кондо и групп
 }
 
 func (f *fakeAdminStorage) ListUsers(context.Context) ([]entities.UserInfo, error) { return nil, nil }
@@ -48,6 +53,20 @@ func (f *fakeAdminStorage) SetApartmentAccess(_ context.Context, _ int, access e
 	f.lastAccess = &access
 	return nil
 }
+func (f *fakeAdminStorage) SetApartmentPlacement(_ context.Context, placement entities.ApartmentPlacement) error {
+	f.lastPlacement = &placement
+	return f.storageErr
+}
+func (f *fakeAdminStorage) ListCondos(context.Context) ([]entities.Condo, error) { return nil, nil }
+func (f *fakeAdminStorage) CreateCondo(_ context.Context, name string) error {
+	f.savedName = name
+	return f.storageErr
+}
+func (f *fakeAdminStorage) RenameCondo(context.Context, int, string) error     { return f.storageErr }
+func (f *fakeAdminStorage) DeleteCondo(context.Context, int) error             { return f.storageErr }
+func (f *fakeAdminStorage) CreateGroup(context.Context, int, string) error     { return f.storageErr }
+func (f *fakeAdminStorage) RenameGroup(context.Context, int, string) error     { return f.storageErr }
+func (f *fakeAdminStorage) DeleteGroup(context.Context, int) error             { return f.storageErr }
 func (f *fakeAdminStorage) ListRoles(context.Context) ([]entities.Role, error) { return f.roles, nil }
 func (f *fakeAdminStorage) CreateRole(context.Context, string, string) error   { return nil }
 func (f *fakeAdminStorage) UpdateRole(_ context.Context, _ string, _ *string, permissions []string) error {
@@ -169,4 +188,60 @@ func TestRoleGrantRejectedForAssignedOnlyRole(t *testing.T) {
 	_, err = s.SetApartmentAccess(context.Background(), 1, entities.ApartmentAccess{Roles: []string{"manager"}, UserIDs: []uuid.UUID{owner}})
 	require.NoError(t, err)
 	assert.Equal(t, []uuid.UUID{owner}, storage.lastAccess.UserIDs)
+}
+
+func TestApartmentPlacementValidated(t *testing.T) {
+	ctx := context.Background()
+	condo, group := 1, 2
+
+	storage := &fakeAdminStorage{}
+	s := NewServiceAdmin(storage, nil)
+
+	err := s.SetApartmentPlacement(ctx, entities.ApartmentPlacement{CondoID: &condo})
+	assert.True(t, isValidation(err), "нужен хотя бы один апартамент")
+
+	err = s.SetApartmentPlacement(ctx, entities.ApartmentPlacement{ApartmentIDs: []int{5}, GroupID: &group})
+	assert.True(t, isValidation(err), "группа без кондо")
+	assert.Nil(t, storage.lastPlacement)
+
+	_, err = s.CreateApartment(ctx, entities.Apartment{RoomNumber: "A1", GroupID: &group}, entities.ApartmentAccess{})
+	assert.True(t, isValidation(err), "новый апартамент: группа без кондо")
+
+	// снять кондо и группу можно
+	require.NoError(t, s.SetApartmentPlacement(ctx, entities.ApartmentPlacement{ApartmentIDs: []int{5}}))
+	assert.Equal(t, []int{5}, storage.lastPlacement.ApartmentIDs)
+
+	storage.storageErr = erro.ErrInvalidReference
+	err = s.SetApartmentPlacement(ctx, entities.ApartmentPlacement{ApartmentIDs: []int{5}, CondoID: &condo, GroupID: &group})
+	assert.True(t, isValidation(err), "группа из другого кондо")
+}
+
+func TestCondoNames(t *testing.T) {
+	ctx := context.Background()
+	storage := &fakeAdminStorage{}
+	s := NewServiceAdmin(storage, nil)
+
+	require.NoError(t, s.CreateCondo(ctx, "  Halo "))
+	assert.Equal(t, "Halo", storage.savedName)
+
+	assert.True(t, isValidation(s.CreateCondo(ctx, "   ")), "пустое название")
+	assert.True(t, isValidation(s.CreateGroup(ctx, 1, strings.Repeat("я", maxPlacementNameLen+1))), "слишком длинное название")
+	require.NoError(t, s.RenameGroup(ctx, 1, strings.Repeat("я", maxPlacementNameLen)), "длина считается в символах, а не байтах")
+
+	storage.storageErr = erro.ErrAlreadyExists
+	assert.True(t, isValidation(s.CreateCondo(ctx, "Halo")), "занятое название")
+	assert.True(t, isValidation(s.RenameGroup(ctx, 1, "Halo")), "занятое название группы")
+}
+
+func TestDeleteCondoAndGroupWithApartments(t *testing.T) {
+	ctx := context.Background()
+	storage := &fakeAdminStorage{storageErr: erro.ErrInvalidReference}
+	s := NewServiceAdmin(storage, nil)
+
+	assert.True(t, isValidation(s.DeleteCondo(ctx, 1)))
+	assert.True(t, isValidation(s.DeleteGroup(ctx, 1)))
+
+	storage.storageErr = nil
+	require.NoError(t, s.DeleteCondo(ctx, 1))
+	require.NoError(t, s.DeleteGroup(ctx, 1))
 }

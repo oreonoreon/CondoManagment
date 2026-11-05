@@ -148,7 +148,7 @@ func (db *Repository) ReadApartmentWithAccess(ctx context.Context, id int) (*ent
 
 func (db *Repository) readApartmentsWithAccess(ctx context.Context, id *int) ([]entities.ApartmentWithAccess, error) {
 	rows, err := db.PostgreSQL.QueryContext(ctx,
-		`SELECT `+apartmentColumns+` FROM apartments a WHERE $1::int IS NULL OR a.id = $1 ORDER BY a.room_number`, id)
+		`SELECT `+apartmentColumns+` FROM `+apartmentsFrom+` WHERE $1::int IS NULL OR a.id = $1 ORDER BY a.room_number`, id)
 	if err != nil {
 		return nil, err
 	}
@@ -207,8 +207,9 @@ func (db *Repository) CreateApartment(ctx context.Context, apartment entities.Ap
 	var id int
 	err := db.withTx(ctx, func(tx *sql.Tx) error {
 		err := tx.QueryRowContext(ctx,
-			`INSERT INTO apartments (room_number, description, airbnb_calendar, is_active) VALUES ($1, $2, $3, $4) RETURNING id`,
-			apartment.RoomNumber, apartment.Description, apartment.AirbnbCalendar, apartment.IsActive,
+			`INSERT INTO apartments (room_number, description, airbnb_calendar, is_active, condo_id, group_id)
+			VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+			apartment.RoomNumber, apartment.Description, apartment.AirbnbCalendar, apartment.IsActive, apartment.CondoID, apartment.GroupID,
 		).Scan(&id)
 		if err != nil {
 			return err
@@ -248,6 +249,14 @@ func (db *Repository) UpdateApartment(ctx context.Context, id int, upd entities.
 	return requireAffected(res)
 }
 
+// SetApartmentPlacement относит апартаменты к кондо и группе. erro.ErrInvalidReference, если группа не из этого кондо.
+func (db *Repository) SetApartmentPlacement(ctx context.Context, placement entities.ApartmentPlacement) error {
+	_, err := db.PostgreSQL.ExecContext(ctx,
+		"UPDATE apartments SET condo_id=$1, group_id=$2 WHERE id = ANY($3)",
+		placement.CondoID, placement.GroupID, pq.Array(placement.ApartmentIDs))
+	return translateAdminPQ(err)
+}
+
 // SetApartmentAccess заменяет весь выданный к апартаменту доступ. erro.ErrNotFound, если апартамента нет.
 func (db *Repository) SetApartmentAccess(ctx context.Context, id int, access entities.ApartmentAccess) error {
 	return db.withTx(ctx, func(tx *sql.Tx) error {
@@ -280,6 +289,98 @@ func insertApartmentAccess(ctx context.Context, tx *sql.Tx, room string, access 
 		`INSERT INTO apartment_access (room_number, user_id) SELECT $1, unnest($2::uuid[]) ON CONFLICT DO NOTHING`,
 		room, pq.Array(userIDs))
 	return err
+}
+
+// ─── Кондо и группы ───
+
+// ListCondos возвращает кондо с группами и числом апартаментов, по алфавиту.
+func (db *Repository) ListCondos(ctx context.Context) ([]entities.Condo, error) {
+	rows, err := db.PostgreSQL.QueryContext(ctx,
+		`SELECT c.id, c.name, (SELECT count(*) FROM apartments a WHERE a.condo_id = c.id)
+		FROM condos c ORDER BY c.name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	condos := make([]entities.Condo, 0)
+	index := make(map[int]int)
+	for rows.Next() {
+		condo := entities.Condo{Groups: []entities.ApartmentGroup{}}
+		if err := rows.Scan(&condo.ID, &condo.Name, &condo.ApartmentCount); err != nil {
+			return nil, err
+		}
+		index[condo.ID] = len(condos)
+		condos = append(condos, condo)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	groups, err := db.PostgreSQL.QueryContext(ctx,
+		`SELECT g.id, g.condo_id, g.name, (SELECT count(*) FROM apartments a WHERE a.group_id = g.id)
+		FROM apartment_groups g ORDER BY g.name`)
+	if err != nil {
+		return nil, err
+	}
+	defer groups.Close()
+
+	for groups.Next() {
+		var group entities.ApartmentGroup
+		if err := groups.Scan(&group.ID, &group.CondoID, &group.Name, &group.ApartmentCount); err != nil {
+			return nil, err
+		}
+		if i, ok := index[group.CondoID]; ok {
+			condos[i].Groups = append(condos[i].Groups, group)
+		}
+	}
+	return condos, groups.Err()
+}
+
+func (db *Repository) CreateCondo(ctx context.Context, name string) error {
+	_, err := db.PostgreSQL.ExecContext(ctx, "INSERT INTO condos (name) VALUES ($1)", name)
+	return translateAdminPQ(err)
+}
+
+func (db *Repository) RenameCondo(ctx context.Context, id int, name string) error {
+	res, err := db.PostgreSQL.ExecContext(ctx, "UPDATE condos SET name=$2 WHERE id=$1", id, name)
+	if err != nil {
+		return translateAdminPQ(err)
+	}
+	return requireAffected(res)
+}
+
+// DeleteCondo удаляет кондо вместе с его группами.
+// erro.ErrNotFound, если его нет; erro.ErrInvalidReference, если в нём есть апартаменты.
+func (db *Repository) DeleteCondo(ctx context.Context, id int) error {
+	res, err := db.PostgreSQL.ExecContext(ctx, "DELETE FROM condos WHERE id=$1", id)
+	if err != nil {
+		return translateAdminPQ(err)
+	}
+	return requireAffected(res)
+}
+
+// CreateGroup создаёт группу в кондо. erro.ErrInvalidReference, если кондо нет.
+func (db *Repository) CreateGroup(ctx context.Context, condoID int, name string) error {
+	_, err := db.PostgreSQL.ExecContext(ctx, "INSERT INTO apartment_groups (condo_id, name) VALUES ($1, $2)", condoID, name)
+	return translateAdminPQ(err)
+}
+
+func (db *Repository) RenameGroup(ctx context.Context, id int, name string) error {
+	res, err := db.PostgreSQL.ExecContext(ctx, "UPDATE apartment_groups SET name=$2 WHERE id=$1", id, name)
+	if err != nil {
+		return translateAdminPQ(err)
+	}
+	return requireAffected(res)
+}
+
+// DeleteGroup удаляет группу. erro.ErrNotFound, если её нет; erro.ErrInvalidReference, если в ней есть апартаменты.
+func (db *Repository) DeleteGroup(ctx context.Context, id int) error {
+	res, err := db.PostgreSQL.ExecContext(ctx, "DELETE FROM apartment_groups WHERE id=$1", id)
+	if err != nil {
+		return translateAdminPQ(err)
+	}
+	return requireAffected(res)
 }
 
 // ─── Роли ───

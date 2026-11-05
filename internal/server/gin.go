@@ -174,6 +174,15 @@ func Gin(h Handle) {
 		admin.POST("/apartments", apartmentsManage, h.AdminCreateApartment)
 		admin.PATCH("/apartments/:id", apartmentsManage, h.AdminUpdateApartment)
 		admin.PUT("/apartments/:id/access", apartmentsManage, h.AdminSetApartmentAccess)
+		admin.PUT("/apartments/placement", apartmentsManage, h.AdminSetApartmentPlacement)
+
+		admin.GET("/condos", apartmentsManage, h.AdminListCondos)
+		admin.POST("/condos", apartmentsManage, h.AdminCreateCondo)
+		admin.PATCH("/condos/:id", apartmentsManage, h.AdminRenameCondo)
+		admin.DELETE("/condos/:id", apartmentsManage, h.AdminDeleteCondo)
+		admin.POST("/condos/:id/groups", apartmentsManage, h.AdminCreateGroup)
+		admin.PATCH("/groups/:id", apartmentsManage, h.AdminRenameGroup)
+		admin.DELETE("/groups/:id", apartmentsManage, h.AdminDeleteGroup)
 
 		// список ролей нужен и для выбора роли пользователю, и для выдачи доступа к апартаментам
 		admin.GET("/roles", RequireAnyPermission(entities.PermUsersManage, entities.PermApartmentsManage, entities.PermRolesManage), h.AdminListRoles)

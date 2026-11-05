@@ -4,6 +4,7 @@ import (
 	"awesomeProject/internal/entities"
 	"awesomeProject/internal/erro"
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -28,6 +29,15 @@ type StorageAdmin interface {
 	CreateApartment(ctx context.Context, apartment entities.Apartment, access entities.ApartmentAccess) (int, error)
 	UpdateApartment(ctx context.Context, id int, upd entities.ApartmentUpdate) error
 	SetApartmentAccess(ctx context.Context, id int, access entities.ApartmentAccess) error
+	SetApartmentPlacement(ctx context.Context, placement entities.ApartmentPlacement) error
+
+	ListCondos(ctx context.Context) ([]entities.Condo, error)
+	CreateCondo(ctx context.Context, name string) error
+	RenameCondo(ctx context.Context, id int, name string) error
+	DeleteCondo(ctx context.Context, id int) error
+	CreateGroup(ctx context.Context, condoID int, name string) error
+	RenameGroup(ctx context.Context, id int, name string) error
+	DeleteGroup(ctx context.Context, id int) error
 
 	ListRoles(ctx context.Context) ([]entities.Role, error)
 	CreateRole(ctx context.Context, name, description string) error
@@ -122,7 +132,13 @@ func (s *ServiceAdmin) CreateApartment(ctx context.Context, apartment entities.A
 	if err := s.checkRoleGrants(ctx, access.Roles); err != nil {
 		return nil, err
 	}
+	if apartment.GroupID != nil && apartment.CondoID == nil {
+		return nil, errGroupNeedsCondo
+	}
 	id, err := s.storage.CreateApartment(ctx, apartment, access)
+	if errors.Is(err, erro.ErrInvalidReference) && apartment.CondoID != nil {
+		return nil, errPlacementNotFound
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -180,6 +196,107 @@ func normalizeAccess(access entities.ApartmentAccess) entities.ApartmentAccess {
 		}
 	}
 	return entities.ApartmentAccess{Roles: roles, UserIDs: userIDs}
+}
+
+// ─── Кондо и группы ───
+
+var (
+	errGroupNeedsCondo   = erro.NewValidation("Группа выбирается внутри кондо — сначала укажите кондо")
+	errPlacementNotFound = erro.NewValidation("Кондо или группа не найдены, либо группа не из этого кондо")
+)
+
+// maxPlacementNameLen — длина колонок name в condos и apartment_groups.
+const maxPlacementNameLen = 100
+
+// SetApartmentPlacement относит апартаменты к кондо и группе; nil снимает кондо или группу.
+func (s *ServiceAdmin) SetApartmentPlacement(ctx context.Context, placement entities.ApartmentPlacement) error {
+	if len(placement.ApartmentIDs) == 0 {
+		return erro.NewValidation("Не выбраны апартаменты")
+	}
+	if placement.GroupID != nil && placement.CondoID == nil {
+		return errGroupNeedsCondo
+	}
+	err := s.storage.SetApartmentPlacement(ctx, placement)
+	if errors.Is(err, erro.ErrInvalidReference) {
+		return errPlacementNotFound
+	}
+	return err
+}
+
+func (s *ServiceAdmin) ListCondos(ctx context.Context) ([]entities.Condo, error) {
+	return s.storage.ListCondos(ctx)
+}
+
+func (s *ServiceAdmin) CreateCondo(ctx context.Context, name string) error {
+	name, err := placementName(name)
+	if err != nil {
+		return err
+	}
+	return duplicateName(s.storage.CreateCondo(ctx, name), "Кондо с таким названием уже есть")
+}
+
+func (s *ServiceAdmin) RenameCondo(ctx context.Context, id int, name string) error {
+	name, err := placementName(name)
+	if err != nil {
+		return err
+	}
+	return duplicateName(s.storage.RenameCondo(ctx, id, name), "Кондо с таким названием уже есть")
+}
+
+func (s *ServiceAdmin) DeleteCondo(ctx context.Context, id int) error {
+	err := s.storage.DeleteCondo(ctx, id)
+	if errors.Is(err, erro.ErrInvalidReference) {
+		return erro.NewValidation("В кондо есть апартаменты — сначала перенесите их")
+	}
+	return err
+}
+
+func (s *ServiceAdmin) CreateGroup(ctx context.Context, condoID int, name string) error {
+	name, err := placementName(name)
+	if err != nil {
+		return err
+	}
+	err = s.storage.CreateGroup(ctx, condoID, name)
+	if errors.Is(err, erro.ErrInvalidReference) {
+		return erro.ErrNotFound
+	}
+	return duplicateName(err, "В этом кондо уже есть группа с таким названием")
+}
+
+func (s *ServiceAdmin) RenameGroup(ctx context.Context, id int, name string) error {
+	name, err := placementName(name)
+	if err != nil {
+		return err
+	}
+	return duplicateName(s.storage.RenameGroup(ctx, id, name), "В этом кондо уже есть группа с таким названием")
+}
+
+func (s *ServiceAdmin) DeleteGroup(ctx context.Context, id int) error {
+	err := s.storage.DeleteGroup(ctx, id)
+	if errors.Is(err, erro.ErrInvalidReference) {
+		return erro.NewValidation("В группе есть апартаменты — сначала перенесите их")
+	}
+	return err
+}
+
+// placementName проверяет название кондо или группы.
+func placementName(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", erro.NewValidation("Укажите название")
+	}
+	if len([]rune(name)) > maxPlacementNameLen {
+		return "", erro.NewValidation(fmt.Sprintf("Название длиннее %d символов", maxPlacementNameLen))
+	}
+	return name, nil
+}
+
+// duplicateName заменяет общую ошибку о занятом значении на понятный текст.
+func duplicateName(err error, message string) error {
+	if errors.Is(err, erro.ErrAlreadyExists) {
+		return erro.NewValidation(message)
+	}
+	return err
 }
 
 // ─── Роли ───
